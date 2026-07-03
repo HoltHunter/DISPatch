@@ -11,6 +11,7 @@
 #include <QtCore/QTextStream>
 #include <QtCore/QTime>
 #include <QtCore/QTimer>
+#include <QtCore/QVariantAnimation>
 #include <QtGui/QColor>
 #include <QtGui/QFont>
 #include <QtGui/QTextCharFormat>
@@ -266,12 +267,13 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
     connect(networkInterfaceCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() -> void {
+        updateBroadcastDestinationAddress();
         bindListenSocket();
         bindDummyFederateSocket();
     });
     QHostAddress configuredDestination;
     if (parseConfigAddress(appConfig_.destinationAddress, &configuredDestination)) {
-        if (isBroadcastAddress(configuredDestination)) {
+        if (isBroadcastDestination(configuredDestination)) {
             setDestinationMode(DestinationMode::Broadcast);
         } else if (configuredDestination == QHostAddress(QHostAddress::LocalHost)) {
             setDestinationMode(DestinationMode::Localhost);
@@ -577,6 +579,18 @@ auto MainWindow::primaryIpv4Address(const QNetworkInterface &networkInterface) -
     return {};
 }
 
+auto MainWindow::primaryIpv4BroadcastAddress(const QNetworkInterface &networkInterface) -> QHostAddress
+{
+    for (const QNetworkAddressEntry &entry : networkInterface.addressEntries()) {
+        if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol
+            && !entry.broadcast().isNull()) {
+            return entry.broadcast();
+        }
+    }
+
+    return {};
+}
+
 auto MainWindow::interfaceForAddress(const QHostAddress &address) -> QNetworkInterface
 {
     for (const QNetworkInterface &networkInterface : QNetworkInterface::allInterfaces()) {
@@ -590,9 +604,16 @@ auto MainWindow::interfaceForAddress(const QHostAddress &address) -> QNetworkInt
     return {};
 }
 
+auto MainWindow::isBroadcastDestination(const QHostAddress &address) const -> bool
+{
+    return destinationMode_ == DestinationMode::Broadcast || isBroadcastAddress(address)
+        || address == primaryIpv4BroadcastAddress(selectedNetworkInterface());
+}
+
 auto MainWindow::effectiveListenAddress(const QHostAddress &listenAddress, const QHostAddress &destinationAddress) const -> QHostAddress
 {
-    if (!isAnyAddress(listenAddress) || destinationAddress.isMulticast()) {
+    if (!isAnyAddress(listenAddress) || destinationAddress.isMulticast()
+        || isBroadcastDestination(destinationAddress)) {
         return listenAddress;
     }
 
@@ -604,9 +625,19 @@ auto MainWindow::effectiveListenAddress(const QHostAddress &listenAddress, const
     return listenAddress;
 }
 
+auto MainWindow::effectiveSendAddress(const QHostAddress &destinationAddress) const -> QHostAddress
+{
+    if (!isBroadcastDestination(destinationAddress)) {
+        return destinationAddress;
+    }
+
+    const QHostAddress directedBroadcast = primaryIpv4BroadcastAddress(selectedNetworkInterface());
+    return directedBroadcast.isNull() ? destinationAddress : directedBroadcast;
+}
+
 auto MainWindow::dummyFederateBindAddress(const QHostAddress &destinationAddress) const -> QHostAddress
 {
-    if (destinationAddress.isMulticast() || isBroadcastAddress(destinationAddress)) {
+    if (destinationAddress.isMulticast() || isBroadcastDestination(destinationAddress)) {
         return QHostAddress::AnyIPv4;
     }
 
@@ -849,15 +880,45 @@ void MainWindow::updateHeartbeat(const EntityId &entityId)
     auto status = heartbeatStatuses_.find(id);
     if (status == heartbeatStatuses_.end()) {
         HeartbeatStatus newStatus;
-        newStatus.label = new QLabel();
-        heartbeatLayout_->addWidget(newStatus.label);
+        auto *row = new QWidget();
+        auto *rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(6);
+        newStatus.iconLabel = new QLabel(QStringLiteral("\u2665"), row);
+        newStatus.iconLabel->setAlignment(Qt::AlignCenter);
+        newStatus.iconLabel->setFixedSize(HeartbeatIconExtent, HeartbeatIconExtent);
+        newStatus.idLabel = new QLabel(id, row);
+        newStatus.idLabel->setStyleSheet(
+            QStringLiteral("QLabel { font-size: 12pt; font-weight: 600; }"));
+        rowLayout->addWidget(newStatus.iconLabel);
+        rowLayout->addWidget(newStatus.idLabel);
+        newStatus.pulseAnimation = new QVariantAnimation(row);
+        newStatus.pulseAnimation->setDuration(HeartbeatPulseDurationMilliseconds);
+        newStatus.pulseAnimation->setKeyValueAt(0.0, 20.0);
+        newStatus.pulseAnimation->setKeyValueAt(0.18, 28.0);
+        newStatus.pulseAnimation->setKeyValueAt(0.40, 20.0);
+        newStatus.pulseAnimation->setKeyValueAt(0.58, 24.0);
+        newStatus.pulseAnimation->setKeyValueAt(0.78, 20.0);
+        newStatus.pulseAnimation->setKeyValueAt(1.0, 20.0);
+        connect(newStatus.pulseAnimation,
+                &QVariantAnimation::valueChanged,
+                newStatus.iconLabel,
+                [iconLabel = newStatus.iconLabel](const QVariant &value) -> void {
+                    iconLabel->setStyleSheet(
+                        QStringLiteral("QLabel { color: #e25555; font-size: %1pt; font-weight: 700; }")
+                            .arg(value.toDouble(), 0, 'f', 1));
+                });
+        heartbeatLayout_->addWidget(row);
         status = heartbeatStatuses_.insert(id, newStatus);
     }
 
     status->lastUpdateMilliseconds = QDateTime::currentMSecsSinceEpoch();
     status->alive = true;
-    status->label->setText(QStringLiteral("\u2665 %1").arg(id));
-    status->label->setStyleSheet(QStringLiteral("QLabel { color: #e25555; font-weight: 600; }"));
+    status->iconLabel->setText(QStringLiteral("\u2665"));
+    status->idLabel->setStyleSheet(
+        QStringLiteral("QLabel { font-size: 12pt; font-weight: 600; }"));
+    status->pulseAnimation->stop();
+    status->pulseAnimation->start();
 }
 
 void MainWindow::checkHeartbeatTimeouts()
@@ -874,8 +935,12 @@ void MainWindow::checkHeartbeatTimeouts()
         }
 
         status->alive = false;
-        status->label->setText(QStringLiteral("\u2620 %1").arg(status.key()));
-        status->label->setStyleSheet(QStringLiteral("QLabel { color: #8a8f98; font-weight: 600; }"));
+        status->pulseAnimation->stop();
+        status->iconLabel->setText(QStringLiteral("\u2620"));
+        status->iconLabel->setStyleSheet(
+            QStringLiteral("QLabel { color: #8a8f98; font-size: 20pt; font-weight: 700; }"));
+        status->idLabel->setStyleSheet(
+            QStringLiteral("QLabel { color: #8a8f98; font-size: 12pt; font-weight: 600; }"));
     }
 }
 
@@ -926,9 +991,9 @@ void MainWindow::sendDummyFederateHeartbeat()
     heartbeatConfig.managerId = currentTestFederateId();
     heartbeatConfig.targetId = config.managerId;
     const QByteArray heartbeat = makeCommentPdu(heartbeatConfig);
-    QHostAddress heartbeatAddress = config.destinationAddress;
+    QHostAddress heartbeatAddress = effectiveSendAddress(config.destinationAddress);
     quint16 heartbeatPort = config.destinationPort;
-    if (!config.destinationAddress.isMulticast() && !isBroadcastAddress(config.destinationAddress)) {
+    if (!config.destinationAddress.isMulticast() && !isBroadcastDestination(config.destinationAddress)) {
         heartbeatAddress = effectiveListenAddress(config.listenAddress, config.destinationAddress);
         heartbeatPort = config.listenPort;
     }
@@ -936,11 +1001,17 @@ void MainWindow::sendDummyFederateHeartbeat()
                                                                 heartbeatAddress,
                                                                 heartbeatPort);
     if (written != heartbeat.size()) {
-        appendLog(QStringLiteral("Dummy federate failed to send heartbeat: %1")
-                      .arg(dummyFederateSocket_->errorString()),
-                  LogLevel::Error);
+        if (!dummyHeartbeatSendFailed_) {
+            appendLog(QStringLiteral("Dummy federate failed to send heartbeat to %1:%2: %3")
+                          .arg(heartbeatAddress.toString())
+                          .arg(heartbeatPort)
+                          .arg(dummyFederateSocket_->errorString()),
+                      LogLevel::Error);
+        }
+        dummyHeartbeatSendFailed_ = true;
         return;
     }
+    dummyHeartbeatSendFailed_ = false;
 }
 
 auto MainWindow::makeEntityId(const QSpinBox *site, const QSpinBox *application, const QSpinBox *entity) -> EntityId
@@ -1008,13 +1079,13 @@ void MainWindow::setDestinationMode(DestinationMode mode)
             networkInterfaceCombo_->setCurrentIndex(interfaceIndex);
         }
     } else if (mode == DestinationMode::Broadcast) {
-        destinationAddressEdit_->setText(QString::fromLatin1(BroadcastDestinationAddress));
         destinationAddressEdit_->setEnabled(false);
         const QNetworkInterface networkInterface = autoSelectedNetworkInterface();
         const int interfaceIndex = networkInterfaceCombo_->findData(networkInterface.name());
         if (interfaceIndex >= 0) {
             networkInterfaceCombo_->setCurrentIndex(interfaceIndex);
         }
+        updateBroadcastDestinationAddress();
     } else {
         destinationAddressEdit_->setText(QString::fromLatin1(LocalhostDestinationAddress));
         destinationAddressEdit_->setEnabled(false);
@@ -1035,6 +1106,19 @@ void MainWindow::setDestinationMode(DestinationMode mode)
     }
     if (dummyFederateSocket_ != nullptr) {
         bindDummyFederateSocket();
+    }
+}
+
+void MainWindow::updateBroadcastDestinationAddress()
+{
+    if (destinationMode_ != DestinationMode::Broadcast) {
+        return;
+    }
+
+    const QHostAddress broadcastAddress = primaryIpv4BroadcastAddress(selectedNetworkInterface());
+    destinationAddressEdit_->setText(broadcastAddress.toString());
+    if (broadcastAddress.isNull()) {
+        statusBar()->showMessage(QStringLiteral("Selected interface has no IPv4 broadcast address"));
     }
 }
 
@@ -1169,7 +1253,7 @@ void MainWindow::bindDummyFederateSocket()
 
 auto MainWindow::dummyFederateShouldShareListenSocket(const DisConfig &config) const -> bool
 {
-    if (config.destinationAddress.isMulticast() || isBroadcastAddress(config.destinationAddress)) {
+    if (config.destinationAddress.isMulticast() || isBroadcastDestination(config.destinationAddress)) {
         return false;
     }
 
@@ -1207,7 +1291,8 @@ void MainWindow::sendStateCommand(SimulationCommand command)
         break;
     }
 
-    const auto written = socket_->writeDatagram(pdu, config.destinationAddress, config.destinationPort);
+    const QHostAddress destinationAddress = effectiveSendAddress(config.destinationAddress);
+    const auto written = socket_->writeDatagram(pdu, destinationAddress, config.destinationPort);
     if (written != pdu.size()) {
         appendLog(QStringLiteral("Failed to send %1 request %2: %3")
                       .arg(commandName(command))
@@ -1239,11 +1324,11 @@ void MainWindow::sendStateCommand(SimulationCommand command)
     appendLog(QStringLiteral("Sent %1 request %2 to %3:%4 (%5 bytes%6)")
                   .arg(commandName(command))
                   .arg(requestId)
-                  .arg(config.destinationAddress.toString())
+                  .arg(destinationAddress.toString())
                   .arg(config.destinationPort)
                   .arg(pdu.size())
                   .arg(detail));
-    appendMessageRow(pdu, config.destinationAddress, config.destinationPort, QStringLiteral("Tx"));
+    appendMessageRow(pdu, destinationAddress, config.destinationPort, QStringLiteral("Tx"));
 }
 
 void MainWindow::readDatagrams()

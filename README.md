@@ -102,9 +102,10 @@ multicast traffic visible on the same machine, which is useful when several
 federates are running locally on one DIS port.
 
 The Network section also has Broadcast and Localhost destination modes. They
-are mutually exclusive shortcuts that set the destination to `255.255.255.255`
-or `127.0.0.1`, select an appropriate interface, and adjust UDP bind flags for
-the selected mode.
+are mutually exclusive shortcuts that set the destination to the selected
+interface's IPv4 broadcast address or `127.0.0.1`, select an appropriate
+interface, and adjust UDP bind flags for the selected mode. In Broadcast mode,
+changing the interface immediately updates the displayed destination address.
 
 The optional `heartbeat` block enables liveness tracking:
 
@@ -118,11 +119,11 @@ The optional `heartbeat` block enables liveness tracking:
 `timeout` is measured in seconds and must be at least `1`. When heartbeat
 tracking is enabled, each received Entity State PDU updates the status of its
 entity ID. A Comment PDU does the same when its receiving entity matches the
-manager ID. Live entities appear with a heart and change to a skull when no
-update arrives before the timeout. Entity State and Comment PDUs are ignored
-when heartbeat tracking is disabled. Entity State PDUs do not contain a
-receiving entity, so receipt on the configured DIS network is treated as being
-addressed to this manager.
+manager ID. Live entities appear with a heart that pulses on each update and
+changes to a skull when no update arrives before the timeout. Entity State and
+Comment PDUs are ignored when heartbeat tracking is disabled. Entity State PDUs
+do not contain a receiving entity, so receipt on the configured DIS network is
+treated as being addressed to this manager.
 
 The message table is a socket-level PDU trace for command and response traffic.
 Entity State and Comment PDUs used as heartbeats are intentionally omitted from

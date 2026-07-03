@@ -22,6 +22,7 @@ class QPlainTextEdit;
 class QSpinBox;
 class QTableWidget;
 class QTimer;
+class QVariantAnimation;
 class QVBoxLayout;
 class QWidget;
 
@@ -35,7 +36,9 @@ public:
 
 private:
     struct HeartbeatStatus {
-        QLabel *label = nullptr;
+        QLabel *iconLabel = nullptr;
+        QLabel *idLabel = nullptr;
+        QVariantAnimation *pulseAnimation = nullptr;
         qint64 lastUpdateMilliseconds = 0;
         bool alive = true;
     };
@@ -54,8 +57,12 @@ private:
     auto selectedNetworkInterface() const -> QNetworkInterface;
     static auto interfaceLabel(const QNetworkInterface &networkInterface) -> QString;
     static auto primaryIpv4Address(const QNetworkInterface &networkInterface) -> QHostAddress;
+    static auto primaryIpv4BroadcastAddress(const QNetworkInterface &networkInterface) -> QHostAddress;
     static auto interfaceForAddress(const QHostAddress &address) -> QNetworkInterface;
+    [[nodiscard]] auto isBroadcastDestination(const QHostAddress &address) const -> bool;
     auto effectiveListenAddress(const QHostAddress &listenAddress, const QHostAddress &destinationAddress) const -> QHostAddress;
+    auto effectiveSendAddress(const QHostAddress &destinationAddress) const -> QHostAddress;
+    void updateBroadcastDestinationAddress();
     auto dummyFederateBindAddress(const QHostAddress &destinationAddress) const -> QHostAddress;
     void updateSocketOptions(QUdpSocket *socket, const QHostAddress &destinationAddress) const;
     auto configuredMulticastGroup(QString *error = nullptr) const -> QHostAddress;
@@ -151,6 +158,7 @@ private:
     quint32 nextRequestId_ = 1;
     bool dummyFederateEnabled_ = false;
     bool dummyFederateSharesListenSocket_ = false;
+    bool dummyHeartbeatSendFailed_ = false;
     DestinationMode destinationMode_ = DestinationMode::Normal;
     QString savedDestinationAddressBeforeMode_;
     QString savedInterfaceNameBeforeMode_;
