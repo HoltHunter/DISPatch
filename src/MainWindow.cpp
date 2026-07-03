@@ -227,6 +227,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto *networkGroup = new QGroupBox(QStringLiteral("Network"), central);
     auto *networkLayout = new QFormLayout(networkGroup);
+    networkLayout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    networkLayout->setLabelAlignment(Qt::AlignLeft);
     destinationAddressEdit_ = new QLineEdit(appConfig_.destinationAddress, networkGroup);
     destinationPortSpin_ = makePortSpinBox(networkGroup, appConfig_.destinationPort);
     listenAddressEdit_ = new QLineEdit(appConfig_.listenAddress, networkGroup);
