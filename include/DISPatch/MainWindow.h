@@ -21,6 +21,8 @@ class QLineEdit;
 class QPlainTextEdit;
 class QSpinBox;
 class QTableWidget;
+class QTimer;
+class QVBoxLayout;
 class QWidget;
 
 namespace dispatch {
@@ -32,6 +34,12 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
 
 private:
+    struct HeartbeatStatus {
+        QLabel *label = nullptr;
+        qint64 lastUpdateMilliseconds = 0;
+        bool alive = true;
+    };
+
     enum class DestinationMode : quint8 {
         Normal,
         Broadcast,
@@ -73,10 +81,16 @@ private:
     void setDestinationMode(DestinationMode mode);
     void bindListenSocket();
     void bindDummyFederateSocket();
+    [[nodiscard]] auto dummyFederateShouldShareListenSocket(const DisConfig &config) const -> bool;
     void sendStateCommand(SimulationCommand command);
     void readDatagrams();
     void readDummyFederateDatagrams();
     void respondFromDummyFederate(const QByteArray &datagram, const QHostAddress &sender, quint16 senderPort);
+    void updateHeartbeat(const EntityId &entityId);
+    void checkHeartbeatTimeouts();
+    void sendDummyFederateHeartbeat();
+    void setDummyFederateDead(bool dead);
+    [[nodiscard]] auto dummyFederateStatusText(const DisConfig &config) const -> QString;
     void appendMessageRow(const QByteArray &datagram,
                           const QHostAddress &peer,
                           quint16 peerPort,
@@ -108,6 +122,7 @@ private:
     QSpinBox *targetApplicationSpin_ = nullptr;
     QSpinBox *targetEntitySpin_ = nullptr;
     QCheckBox *targetBroadcastCheck_ = nullptr;
+    QVBoxLayout *heartbeatLayout_ = nullptr;
     QSpinBox *startRealWorldTimeOffsetSpin_ = nullptr;
     QSpinBox *startSimulationTimeOffsetSpin_ = nullptr;
     QCheckBox *startUseLiteralZeroCheck_ = nullptr;
@@ -116,12 +131,15 @@ private:
     QSpinBox *dummyFederateSiteSpin_ = nullptr;
     QSpinBox *dummyFederateApplicationSpin_ = nullptr;
     QSpinBox *dummyFederateEntitySpin_ = nullptr;
+    QCheckBox *dummyFederateDeadCheck_ = nullptr;
     QTableWidget *responseTable_ = nullptr;
     QPlainTextEdit *log_ = nullptr;
     QFile logFile_;
     QFile messageLogFile_;
     QUdpSocket *socket_ = nullptr;
     QUdpSocket *dummyFederateSocket_ = nullptr;
+    QTimer *heartbeatCheckTimer_ = nullptr;
+    QTimer *dummyHeartbeatTimer_ = nullptr;
     QHostAddress boundAddress_;
     QHostAddress dummyFederateBoundAddress_;
     QHostAddress joinedListenMulticastGroup_;
@@ -132,12 +150,14 @@ private:
     quint16 dummyFederateBoundPort_ = 0;
     quint32 nextRequestId_ = 1;
     bool dummyFederateEnabled_ = false;
+    bool dummyFederateSharesListenSocket_ = false;
     DestinationMode destinationMode_ = DestinationMode::Normal;
     QString savedDestinationAddressBeforeMode_;
     QString savedInterfaceNameBeforeMode_;
     AppConfig appConfig_;
     QStringList configWarnings_;
     QMap<quint32, QString> requestStates_;
+    QMap<QString, HeartbeatStatus> heartbeatStatuses_;
 };
 
 } // namespace dispatch

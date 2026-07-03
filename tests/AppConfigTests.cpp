@@ -109,6 +109,44 @@ TEST_CASE("Config accepts exercise ID zero")
     CHECK(config.exerciseId == 0);
 }
 
+TEST_CASE("Config loads heartbeat settings")
+{
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const QString path = writeConfig(directory, R"json({
+  "heartbeat": {
+    "enabled": true,
+    "timeout": 12
+  }
+})json");
+
+    QStringList warnings;
+    const AppConfig config = loadAppConfig(path, &warnings);
+
+    CHECK(warnings.isEmpty());
+    CHECK(config.heartbeatEnabled);
+    CHECK(config.heartbeatTimeoutSeconds == 12);
+}
+
+TEST_CASE("Config rejects an invalid heartbeat timeout")
+{
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const QString path = writeConfig(directory, R"json({
+  "heartbeat": {
+    "enabled": true,
+    "timeout": 0
+  }
+})json");
+
+    QStringList warnings;
+    const AppConfig config = loadAppConfig(path, &warnings);
+
+    CHECK(config.heartbeatEnabled);
+    CHECK(config.heartbeatTimeoutSeconds == DefaultHeartbeatTimeoutSeconds);
+    CHECK(warnings.join(QLatin1Char('\n')).contains(QStringLiteral("config.heartbeat.timeout")));
+}
+
 TEST_CASE("Config accepts stop/freeze reason labels")
 {
     CHECK(stopFreezeReasonLabel(RecessReason) == QStringLiteral("Recess"));

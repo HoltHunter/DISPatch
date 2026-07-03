@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DISPatch/Constants.h>
 #include <DISPatch/DisTypes.h>
 #include <DISPatch/Theme.h>
 
@@ -28,6 +29,8 @@ struct AppConfig {
     bool reuseAddress = true;
     bool joinMulticast = true;
     bool multicastLoopback = true;
+    bool heartbeatEnabled = false;
+    int heartbeatTimeoutSeconds = DefaultHeartbeatTimeoutSeconds;
     quint8 exerciseId = 1;
     EntityId managerId;
     EntityId targetId = EntityId{1, 1, 0};

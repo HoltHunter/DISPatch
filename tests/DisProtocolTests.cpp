@@ -11,7 +11,6 @@ constexpr int StartResumeRealWorldHourOffset = 24;
 constexpr int StartResumeRealWorldTimePastHourOffset = 28;
 constexpr int StartResumeSimulationHourOffset = 32;
 constexpr int StartResumeSimulationTimePastHourOffset = 36;
-constexpr int StartResumeRequestIdOffset = 40;
 
 auto testConfig() -> DisConfig
 {
@@ -99,6 +98,71 @@ TEST_CASE("Malformed Start/Resume PDU does not report a bogus request ID")
     pdu.truncate(StopFreezePduLength);
 
     CHECK(requestIdFromResponse(pdu, StartResumePdu) == 0);
+}
+
+TEST_CASE("Simulation requests are matched to their receiving entity")
+{
+    const DisConfig config = testConfig();
+    const QByteArray request = makeStartResumePdu(config, 1);
+    const QByteArray response = makeAcknowledgePdu(config, 1, StartResumePdu);
+
+    CHECK(isSimulationRequestForEntity(request, config.targetId));
+    CHECK_FALSE(isSimulationRequestForEntity(request, EntityId{1, 2, 3}));
+    CHECK_FALSE(isSimulationRequestForEntity(response, config.targetId));
+}
+
+TEST_CASE("Comment PDU identifies its sender as a heartbeat when addressed to the manager")
+{
+    const DisConfig config = testConfig();
+    const QByteArray pdu = makeCommentPdu(config);
+    EntityId heartbeatEntity;
+
+    REQUIRE(pdu.size() == CommentPduLength);
+    CHECK(static_cast<quint8>(pdu[PduTypeOffset]) == CommentPdu);
+    CHECK(static_cast<quint8>(pdu[PduFamilyOffset]) == SimManagementFamily);
+    CHECK(readU16(pdu, PduLengthOffset) == CommentPduLength);
+    CHECK(heartbeatEntityId(pdu, config.targetId, &heartbeatEntity));
+    CHECK(entityIdsMatch(heartbeatEntity, config.managerId));
+    CHECK_FALSE(heartbeatEntityId(pdu, EntityId{1, 2, 3}, &heartbeatEntity));
+}
+
+TEST_CASE("Broadcast Comment PDU is addressed to the manager")
+{
+    DisConfig config = testConfig();
+    config.targetId = EntityId{BroadcastEntityIdValue,
+                               BroadcastEntityIdValue,
+                               BroadcastEntityIdValue};
+    const QByteArray pdu = makeCommentPdu(config);
+    EntityId heartbeatEntity;
+
+    CHECK(heartbeatEntityId(pdu, EntityId{1, 2, 3}, &heartbeatEntity));
+    CHECK(entityIdsMatch(heartbeatEntity, config.managerId));
+}
+
+TEST_CASE("Entity State PDU identifies its entity as a heartbeat")
+{
+    const DisConfig config = testConfig();
+    QByteArray pdu = makeCommentPdu(config);
+    pdu.resize(EntityStatePduLength);
+    pdu[PduTypeOffset] = static_cast<char>(EntityStatePdu);
+    pdu[PduFamilyOffset] = static_cast<char>(EntityInformationFamily);
+    pdu[PduLengthOffset] = static_cast<char>(EntityStatePduLength >> BitsPerByte);
+    pdu[PduLengthOffset + 1] = static_cast<char>(EntityStatePduLength & MaxUint8Value);
+    EntityId heartbeatEntity;
+
+    CHECK(heartbeatEntityId(pdu, EntityId{1, 2, 3}, &heartbeatEntity));
+    CHECK(entityIdsMatch(heartbeatEntity, config.managerId));
+}
+
+TEST_CASE("Malformed heartbeat PDUs are rejected")
+{
+    const DisConfig config = testConfig();
+    QByteArray comment = makeCommentPdu(config);
+    comment.chop(1);
+    EntityId heartbeatEntity;
+
+    CHECK_FALSE(heartbeatEntityId(comment, config.targetId, &heartbeatEntity));
+    CHECK_FALSE(heartbeatEntityId(QByteArray(DisHeaderLength, '\0'), config.targetId, &heartbeatEntity));
 }
 
 } // namespace dispatch

@@ -106,9 +106,28 @@ are mutually exclusive shortcuts that set the destination to `255.255.255.255`
 or `127.0.0.1`, select an appropriate interface, and adjust UDP bind flags for
 the selected mode.
 
-The message table is a socket-level PDU trace. It shows manager and in-process
-test federate sends, and every datagram each socket actually receives. No
-self-looped multicast or localhost packets are hidden or synthesized.
+The optional `heartbeat` block enables liveness tracking:
+
+```json
+"heartbeat": {
+  "enabled": true,
+  "timeout": 5
+}
+```
+
+`timeout` is measured in seconds and must be at least `1`. When heartbeat
+tracking is enabled, each received Entity State PDU updates the status of its
+entity ID. A Comment PDU does the same when its receiving entity matches the
+manager ID. Live entities appear with a heart and change to a skull when no
+update arrives before the timeout. Entity State and Comment PDUs are ignored
+when heartbeat tracking is disabled. Entity State PDUs do not contain a
+receiving entity, so receipt on the configured DIS network is treated as being
+addressed to this manager.
+
+The message table is a socket-level PDU trace for command and response traffic.
+Entity State and Comment PDUs used as heartbeats are intentionally omitted from
+both the table and the message log because their state is shown in the DIS
+Identity heartbeat display.
 
 The optional `log` section can mirror the UI logs to files. `logLevel` can be
 `debug`, `warn`, or `error`; event log entries below that level are hidden from
@@ -135,3 +154,13 @@ responses back to the manager:
 
 - `Initialize`: Action Response PDU
 - `Start`, `Pause`, `Stop`, and `Reset`: Acknowledge PDU
+
+When both the test federate and heartbeat tracking are enabled, the test
+federate periodically sends an empty Comment PDU addressed to the manager.
+Select `Dead (stop heartbeat)` in the Test Federate box to stop those messages
+and exercise the configured timeout; clear it to resume heartbeats.
+
+When localhost mode puts the manager and test federate on the same unicast
+address and port, DISPatch routes test-federate requests through the manager
+socket. This avoids platform `SO_REUSEPORT` behavior that can otherwise deliver
+a localhost datagram to only one of the two sockets.

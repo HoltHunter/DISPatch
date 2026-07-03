@@ -7,6 +7,7 @@
 namespace dispatch {
 
 constexpr quint8 DisVersion = 6;
+constexpr quint8 EntityInformationFamily = 1;
 constexpr quint8 SimManagementFamily = 5;
 constexpr quint16 BroadcastEntityIdValue = 65535;
 constexpr quint8 MaxExerciseId = 255;
@@ -40,9 +41,11 @@ constexpr int AcknowledgePduLength = 32;
 constexpr int ActionRequestPduLength = 40;
 constexpr int StartResumePduLength = 44;
 constexpr int StartResumeRequestIdOffset = 40;
-constexpr int StopFreezeRequestIdOffset = 32;
+constexpr int StopFreezeRequestIdOffset = 36;
 constexpr int StopFreezePduLength = 40;
 constexpr int ActionResponsePduLength = 40;
+constexpr int CommentPduLength = 32;
+constexpr int EntityStatePduLength = 144;
 constexpr int PduVersionOffset = 0;
 constexpr int PduExerciseIdOffset = 1;
 constexpr int PduTypeOffset = 2;
@@ -61,6 +64,9 @@ constexpr int MaxLogBlocks = 1000;
 constexpr int DefaultWindowWidth = 980;
 constexpr int DefaultWindowHeight = 720;
 constexpr int RebindIntervalMilliseconds = 1000;
+constexpr int HeartbeatCheckIntervalMilliseconds = 250;
+constexpr int DefaultHeartbeatTimeoutSeconds = 5;
+constexpr int MaxHeartbeatTimeoutSeconds = 86400;
 constexpr int StateButtonMinimumHeight = 36;
 inline constexpr const char *BroadcastDestinationAddress = "255.255.255.255";
 inline constexpr const char *LocalhostDestinationAddress = "127.0.0.1";
@@ -70,11 +76,13 @@ constexpr quint8 TerminationReason = 2;
 constexpr quint8 StopForResetReason = 6;
 
 enum PduType : quint8 {
+    EntityStatePdu = 1,
     StartResumePdu = 13,
     StopFreezePdu = 14,
     AcknowledgePdu = 15,
     ActionRequestPdu = 16,
-    ActionResponsePdu = 17
+    ActionResponsePdu = 17,
+    CommentPdu = 22
 };
 
 struct StopFreezeReasonOption {

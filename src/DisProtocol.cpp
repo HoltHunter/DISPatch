@@ -26,7 +26,20 @@ void writeEntityId(QDataStream &out, const EntityId &entityId)
     out << entityId.site << entityId.application << entityId.entity;
 }
 
-auto makeHeader(const DisConfig &config, PduType pduType, quint16 length) -> QByteArray
+auto entityIdAddresses(const EntityId &address, const EntityId &entity) -> bool
+{
+    const auto fieldMatches = [](quint16 addressField, quint16 entityField) -> bool {
+        return addressField == BroadcastEntityIdValue || addressField == entityField;
+    };
+    return fieldMatches(address.site, entity.site)
+        && fieldMatches(address.application, entity.application)
+        && fieldMatches(address.entity, entity.entity);
+}
+
+auto makeHeader(const DisConfig &config,
+                PduType pduType,
+                quint16 length,
+                quint8 protocolFamily = SimManagementFamily) -> QByteArray
 {
     QByteArray bytes;
     QDataStream out(&bytes, QIODevice::WriteOnly);
@@ -34,7 +47,7 @@ auto makeHeader(const DisConfig &config, PduType pduType, quint16 length) -> QBy
     out << DisVersion;
     out << config.exerciseId;
     out << static_cast<quint8>(pduType);
-    out << SimManagementFamily;
+    out << protocolFamily;
     out << disTimestamp();
     out << length;
     out << static_cast<quint16>(0);
@@ -139,6 +152,8 @@ auto frozenBehaviorForCommand(const DisConfig &config, SimulationCommand command
 auto pduTypeName(quint8 pduType) -> QString
 {
     switch (pduType) {
+    case EntityStatePdu:
+        return QStringLiteral("Entity State");
     case StartResumePdu:
         return QStringLiteral("Start/Resume");
     case StopFreezePdu:
@@ -149,6 +164,8 @@ auto pduTypeName(quint8 pduType) -> QString
         return QStringLiteral("Action Request");
     case ActionResponsePdu:
         return QStringLiteral("Action Response");
+    case CommentPdu:
+        return QStringLiteral("Comment");
     default:
         return QStringLiteral("PDU %1").arg(pduType);
     }
@@ -258,6 +275,50 @@ auto makeActionResponsePdu(const DisConfig &config, quint32 requestId) -> QByteA
     return bytes;
 }
 
+auto makeCommentPdu(const DisConfig &config) -> QByteArray
+{
+    QByteArray bytes = makeHeader(config, CommentPdu, CommentPduLength);
+    QDataStream out(&bytes, QIODevice::Append);
+    out.setByteOrder(QDataStream::BigEndian);
+
+    writeEntityId(out, config.managerId);
+    writeEntityId(out, config.targetId);
+    out << static_cast<quint32>(0);
+    out << static_cast<quint32>(0);
+
+    return bytes;
+}
+
+auto heartbeatEntityId(const QByteArray &datagram,
+                       const EntityId &receivingEntity,
+                       EntityId *heartbeatEntity) -> bool
+{
+    if (heartbeatEntity == nullptr || datagram.size() < DisHeaderLength
+        || static_cast<quint8>(datagram[PduVersionOffset]) != DisVersion) {
+        return false;
+    }
+
+    const quint8 pduType = static_cast<quint8>(datagram[PduTypeOffset]);
+    const quint8 family = static_cast<quint8>(datagram[PduFamilyOffset]);
+    const quint16 declaredLength = readU16(datagram, PduLengthOffset);
+    if (declaredLength != datagram.size()) {
+        return false;
+    }
+    if (pduType == EntityStatePdu && family == EntityInformationFamily
+        && datagram.size() >= EntityStatePduLength) {
+        *heartbeatEntity = readEntityId(datagram, OriginEntityOffset);
+        return true;
+    }
+    if (pduType == CommentPdu && family == SimManagementFamily
+        && datagram.size() >= CommentPduLength
+        && entityIdAddresses(readEntityId(datagram, TargetEntityOffset), receivingEntity)) {
+        *heartbeatEntity = readEntityId(datagram, OriginEntityOffset);
+        return true;
+    }
+
+    return false;
+}
+
 auto readU16(const QByteArray &bytes, int offset) -> quint16
 {
     if (offset + EntityIdApplicationOffset > bytes.size()) {
@@ -287,6 +348,19 @@ auto readEntityId(const QByteArray &bytes, int offset) -> EntityId
                     readU16(bytes, offset + EntityIdEntityOffset)};
 }
 
+auto isSimulationRequestForEntity(const QByteArray &datagram, const EntityId &entityId) -> bool
+{
+    if (datagram.size() < TargetEntityOffset + EntityIdByteLength
+        || static_cast<quint8>(datagram[PduFamilyOffset]) != SimManagementFamily) {
+        return false;
+    }
+
+    const quint8 pduType = static_cast<quint8>(datagram[PduTypeOffset]);
+    const bool isRequest = pduType == StartResumePdu || pduType == StopFreezePdu
+        || pduType == ActionRequestPdu;
+    return isRequest && entityIdsMatch(readEntityId(datagram, TargetEntityOffset), entityId);
+}
+
 auto entityIdString(const QByteArray &bytes, int offset) -> QString
 {
     return QStringLiteral("%1:%2:%3")
@@ -313,6 +387,12 @@ auto responseSummary(const QByteArray &bytes) -> QString
                           .arg(pduTypeName(pduType))
                           .arg(family)
                           .arg(pduLength);
+
+    if (pduType == EntityStatePdu && family == EntityInformationFamily
+        && bytes.size() >= EntityStatePduLength) {
+        return summary + QStringLiteral("; entity %1")
+                             .arg(entityIdString(bytes, OriginEntityOffset));
+    }
 
     if (family != SimManagementFamily) {
         return summary + QStringLiteral(" (non-Simulation Management)");

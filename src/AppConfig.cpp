@@ -19,6 +19,7 @@ auto rootConfigKeys() -> const QStringList &
 {
     static const QStringList keys{QStringLiteral("theme"),
                                   QStringLiteral("network"),
+                                  QStringLiteral("heartbeat"),
                                   QStringLiteral("dis"),
                                   QStringLiteral("commands"),
                                   QStringLiteral("log"),
@@ -39,6 +40,13 @@ auto networkConfigKeys() -> const QStringList &
                                   QStringLiteral("reuseAddress"),
                                   QStringLiteral("joinMulticast"),
                                   QStringLiteral("multicastLoopback")};
+    return keys;
+}
+
+auto heartbeatConfigKeys() -> const QStringList &
+{
+    static const QStringList keys{QStringLiteral("enabled"),
+                                  QStringLiteral("timeout")};
     return keys;
 }
 
@@ -609,6 +617,24 @@ auto loadAppConfig(const QString &path, QStringList *warnings) -> AppConfig
                                         config.multicastLoopback,
                                         warnings,
                                         QStringLiteral("config.network"));
+
+    const QJsonObject heartbeat = readObject(root,
+                                              QStringLiteral("heartbeat"),
+                                              warnings,
+                                              QStringLiteral("config"));
+    warnUnknownKeys(heartbeat, heartbeatConfigKeys(), warnings, QStringLiteral("config.heartbeat"));
+    config.heartbeatEnabled = readBool(heartbeat,
+                                       QStringLiteral("enabled"),
+                                       config.heartbeatEnabled,
+                                       warnings,
+                                       QStringLiteral("config.heartbeat"));
+    config.heartbeatTimeoutSeconds = readInt(heartbeat,
+                                             QStringLiteral("timeout"),
+                                             config.heartbeatTimeoutSeconds,
+                                             1,
+                                             MaxHeartbeatTimeoutSeconds,
+                                             warnings,
+                                             QStringLiteral("config.heartbeat"));
 
     const QJsonObject dis = readObject(root, QStringLiteral("dis"), warnings, QStringLiteral("config"));
     warnUnknownKeys(dis, disConfigKeys(), warnings, QStringLiteral("config.dis"));

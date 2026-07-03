@@ -13,6 +13,10 @@
     "joinMulticast": true,
     "multicastLoopback": true
   },
+  "heartbeat": {
+    "enabled": false,
+    "timeout": 5
+  },
   "dis": {
     "exerciseId": 1,
     "managerId": {
