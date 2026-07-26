@@ -523,8 +523,6 @@ MainWindow::MainWindow(QWidget *parent)
     socket_ = new QUdpSocket(this);
     updateSocketOptions(socket_, QHostAddress(destinationAddressEdit_->text()));
     connect(socket_, &QUdpSocket::readyRead, this, &MainWindow::readDatagrams);
-    commandSocket_ = new QUdpSocket(this);
-    updateSocketOptions(commandSocket_, QHostAddress(destinationAddressEdit_->text()));
     dummyFederateSocket_ = new QUdpSocket(this);
     connect(dummyFederateSocket_, &QUdpSocket::readyRead, this, &MainWindow::readDummyFederateDatagrams);
     heartbeatCheckTimer_ = new QTimer(this);
@@ -1442,7 +1440,13 @@ void MainWindow::sendStateCommand(SimulationCommand command)
     }
 
     bindListenSocket();
-    updateSocketOptions(commandSocket_, config.destinationAddress);
+    if (socket_->state() != QAbstractSocket::BoundState) {
+        appendLog(QStringLiteral("Cannot send %1 request because the listen socket is not bound")
+                      .arg(commandName(command)),
+                  LogLevel::Error);
+        return;
+    }
+    updateSocketOptions(socket_, config.destinationAddress);
     const quint32 requestId = nextRequestId_++;
     QByteArray pdu;
     switch (command) {
@@ -1460,32 +1464,12 @@ void MainWindow::sendStateCommand(SimulationCommand command)
     }
 
     const QHostAddress destinationAddress = effectiveSendAddress(config.destinationAddress);
-    const auto written = commandSocket_->writeDatagram(pdu, destinationAddress, config.destinationPort);
-    const QList<EntityId> localTestFederateIds =
-        dummyFederateEnabled_ ? testFederateIdsForRequest(pdu) : QList<EntityId>();
+    const auto written = socket_->writeDatagram(pdu, destinationAddress, config.destinationPort);
     if (written != pdu.size()) {
-        if (!localTestFederateIds.isEmpty()) {
-            rememberRequest(requestId, commandName(command));
-            appendLog(QStringLiteral("Network send failed for %1 request %2; using built-in test federates only: %3")
-                          .arg(commandName(command))
-                          .arg(requestId)
-                          .arg(commandSocket_->errorString()),
-                      LogLevel::Warn);
-            appendMessageRow(pdu, destinationAddress, config.destinationPort, QStringLiteral("Test Rx"));
-            for (const EntityId &federateId : localTestFederateIds) {
-                respondFromDummyFederate(pdu,
-                                         destinationAddress,
-                                         config.destinationPort,
-                                         federateId,
-                                         true);
-            }
-            return;
-        }
-
         appendLog(QStringLiteral("Failed to send %1 request %2: %3")
                       .arg(commandName(command))
                       .arg(requestId)
-                      .arg(commandSocket_->errorString()),
+                      .arg(socket_->errorString()),
                   LogLevel::Error);
         return;
     }
@@ -1517,16 +1501,6 @@ void MainWindow::sendStateCommand(SimulationCommand command)
                   .arg(pdu.size())
                   .arg(detail));
     appendMessageRow(pdu, destinationAddress, config.destinationPort, QStringLiteral("Tx"));
-    if (!localTestFederateIds.isEmpty()) {
-        appendMessageRow(pdu, destinationAddress, config.destinationPort, QStringLiteral("Test Rx"));
-        for (const EntityId &federateId : localTestFederateIds) {
-            respondFromDummyFederate(pdu,
-                                     destinationAddress,
-                                     config.destinationPort,
-                                     federateId,
-                                     true);
-        }
-    }
 }
 
 void MainWindow::readDatagrams()
@@ -1621,8 +1595,7 @@ void MainWindow::readDummyFederateDatagrams()
 void MainWindow::respondFromDummyFederate(const QByteArray &datagram,
                                           const QHostAddress &sender,
                                           quint16 senderPort,
-                                          const EntityId &federateId,
-                                          bool directToManager)
+                                          const EntityId &federateId)
 {
     if (datagram.size() > PduTypeOffset) {
         const quint8 pduType = static_cast<quint8>(datagram[PduTypeOffset]);
@@ -1705,15 +1678,13 @@ void MainWindow::respondFromDummyFederate(const QByteArray &datagram,
         configOk && config.destinationAddress.isMulticast() ? config.destinationAddress : sender;
     const quint16 responsePort =
         configOk && config.destinationAddress.isMulticast() ? config.destinationPort : senderPort;
-    if (!directToManager) {
-        const auto written = dummyFederateSocket_->writeDatagram(response, responseAddress, responsePort);
-        if (written != response.size()) {
-            appendLog(QStringLiteral("Dummy federate failed to acknowledge request %1: %2")
-                          .arg(requestId)
-                          .arg(dummyFederateSocket_->errorString()),
-                      LogLevel::Error);
-            return;
-        }
+    const auto written = dummyFederateSocket_->writeDatagram(response, responseAddress, responsePort);
+    if (written != response.size()) {
+        appendLog(QStringLiteral("Dummy federate failed to acknowledge request %1: %2")
+                      .arg(requestId)
+                      .arg(dummyFederateSocket_->errorString()),
+                  LogLevel::Error);
+        return;
     }
 
     appendLog(QStringLiteral("Dummy federate %1 accepted %2 request %3 from %4:%5")
@@ -1730,9 +1701,6 @@ void MainWindow::respondFromDummyFederate(const QByteArray &datagram,
                   .arg(responsePort));
     updateTestFederateState(federateId, stateForAcceptedRequest(static_cast<quint8>(pduType), datagram));
     appendMessageRow(response, responseAddress, responsePort, QStringLiteral("Test Tx"));
-    if (directToManager) {
-        recordResponse(response, responseAddress, responsePort);
-    }
 }
 
 void MainWindow::appendMessageRow(const QByteArray &datagram,

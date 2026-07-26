@@ -11,7 +11,7 @@
     "shareAddress": true,
     "reuseAddress": true,
     "joinMulticast": true,
-    "multicastLoopback": false
+    "multicastLoopback": true
   },
   "heartbeat": {
     "enabled": true,

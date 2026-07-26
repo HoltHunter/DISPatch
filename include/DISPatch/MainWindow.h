@@ -105,8 +105,7 @@ private:
     void respondFromDummyFederate(const QByteArray &datagram,
                                   const QHostAddress &sender,
                                   quint16 senderPort,
-                                  const EntityId &federateId,
-                                  bool directToManager = false);
+                                  const EntityId &federateId);
     void updateHeartbeat(const EntityId &entityId);
     void checkHeartbeatTimeouts();
     void sendDummyFederateHeartbeat();
@@ -158,7 +157,6 @@ private:
     QFile logFile_;
     QFile messageLogFile_;
     QUdpSocket *socket_ = nullptr;
-    QUdpSocket *commandSocket_ = nullptr;
     QUdpSocket *dummyFederateSocket_ = nullptr;
     QTimer *heartbeatCheckTimer_ = nullptr;
     QTimer *dummyHeartbeatTimer_ = nullptr;
