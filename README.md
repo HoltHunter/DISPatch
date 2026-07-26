@@ -20,6 +20,15 @@ cmake -S . -B build
 cmake --build build
 ```
 
+Install with the default CMake prefix:
+
+```bash
+sudo cmake --install build
+```
+
+This installs `dispatch` to `/usr/local/bin` and `dispatch.json` to
+`/usr/local/etc`.
+
 Tests are optional and use Catch2:
 
 ```bash
@@ -81,9 +90,10 @@ instead of the current UTC time.
 
 ## Configuration
 
-At startup, DISPatch looks for `dispatch.json` in your home directory, then
-`/etc/dispatch.json`, then the current working directory, and then next to the
-executable. You can pass an explicit path with `--config path/to/dispatch.json`.
+At startup, DISPatch looks for `dispatch.json` in your home directory, then the
+configured system config directory such as `/usr/local/etc`, then the current
+working directory, and then next to the executable. You can pass an explicit
+path with `--config path/to/dispatch.json`.
 
 The config file supplies startup defaults for theme, network addresses and
 ports, DIS entity IDs, command settings, and frozen behavior. The theme can be

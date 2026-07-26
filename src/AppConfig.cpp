@@ -12,6 +12,10 @@
 #include <QtCore/QJsonValue>
 #include <QtNetwork/QNetworkInterface>
 
+#ifndef DISPATCH_SYSTEM_CONFIG_DIR
+#define DISPATCH_SYSTEM_CONFIG_DIR "/usr/local/etc"
+#endif
+
 namespace dispatch {
 
 namespace {
@@ -425,7 +429,7 @@ auto configSearchPaths() -> QStringList
 
     const QString fileName = QStringLiteral("dispatch.json");
     return {QDir::home().filePath(fileName),
-            QStringLiteral("/etc/%1").arg(fileName),
+            QDir(QStringLiteral(DISPATCH_SYSTEM_CONFIG_DIR)).filePath(fileName),
             QDir::current().filePath(fileName),
             QDir(QCoreApplication::applicationDirPath()).filePath(fileName)};
 }
