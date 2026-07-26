@@ -36,10 +36,11 @@ target_link_libraries(DISPatch PRIVATE DISPatch_core Qt5::Widgets)
 set_target_properties(DISPatch PROPERTIES OUTPUT_NAME dispatch)
 
 configure_file(etc/dispatch.json dispatch.json COPYONLY)
+configure_file(etc/dispatch_debug.json dispatch_debug.json COPYONLY)
 
 install(TARGETS DISPatch
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES etc/dispatch.json
+install(FILES etc/dispatch.json etc/dispatch_debug.json
         DESTINATION ${CMAKE_INSTALL_SYSCONFDIR})
 
 if(DISPATCH_WITH_TESTS)

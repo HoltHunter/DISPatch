@@ -48,6 +48,7 @@ struct AppConfig {
     LogLevel logLevel = LogLevel::Debug;
     bool messageLogs = false;
     QString messageLogFile = QStringLiteral("DISPatch_messages.log");
+    QString logDir;
     bool testFederateEnabled = false;
     QList<EntityId> testFederateIds{EntityId{1, 1, 0}};
     QString configPath;

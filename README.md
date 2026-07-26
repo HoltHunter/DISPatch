@@ -26,8 +26,9 @@ Install with the default CMake prefix:
 sudo cmake --install build
 ```
 
-This installs `dispatch` to `/usr/local/bin` and `dispatch.json` to
-`/usr/local/etc`.
+This installs `dispatch` to `/usr/local/bin`, the passive default
+`dispatch.json` to `/usr/local/etc`, and a local-testing
+`dispatch_debug.json` next to it.
 
 Tests are optional and use Catch2:
 
@@ -62,9 +63,9 @@ not include all Qt build dependencies without extra Red Hat entitlements. To
 build from a subscribed RHEL-derived image instead, override `BASE_IMAGE`.
 
 The output is `dist/DISPatch-<version>-rhel8-<arch>.tar.gz` plus a SHA-256
-checksum. The tarball contains the `dispatch` executable, the default config
-file, Conan-deployed runtime libraries, Qt plugins, and a `run-dispatch`
-launcher that sets `LD_LIBRARY_PATH` and `QT_PLUGIN_PATH`.
+checksum. The tarball contains the `dispatch` executable, the default and debug
+config files, Conan-deployed runtime libraries, Qt plugins, and a
+`run-dispatch` launcher that sets `LD_LIBRARY_PATH` and `QT_PLUGIN_PATH`.
 
 ## DIS6 Command Mapping
 
@@ -90,10 +91,11 @@ instead of the current UTC time.
 
 ## Configuration
 
-At startup, DISPatch looks for `dispatch.json` in your home directory, then the
-configured system config directory such as `/usr/local/etc`, then the current
-working directory, and then next to the executable. You can pass an explicit
-path with `--config path/to/dispatch.json`.
+At startup, DISPatch first uses an explicit `--config path/to/dispatch.json` or
+`--config=path/to/dispatch.json` when provided. Without `--config`, it looks for
+`dispatch.json` in your home directory, then the configured system config
+directory such as `/usr/local/etc`, then the current working directory, and then
+next to the executable.
 
 The config file supplies startup defaults for theme, network addresses and
 ports, DIS entity IDs, command settings, and frozen behavior. The theme can be
@@ -138,16 +140,18 @@ treated as being addressed to this manager.
 
 The message table traces commands sent by this manager and matched federate
 responses for requests sent in the current session. Unexpected PDUs, unmatched
-responses, and Entity State or Comment PDUs used as heartbeats are intentionally
-omitted from both the table and the message log because their state is shown in
-the DIS Identity heartbeat display.
+responses, and Entity State or Comment PDUs used as heartbeats are omitted from
+the table and message log. A response that otherwise looks intended for this
+manager but has a bad or unknown request ID is warned in the event log.
 
 The optional `log` section can mirror the UI logs to files. `logLevel` can be
 `debug`, `warn`, or `error`; event log entries below that level are hidden from
 the UI log and event log file. Warnings and errors are highlighted in the UI.
 Set `logs` to true to append the filtered event log to `logFile`, and set
 `messageLogs` to true to append the filtered PDU trace to `messageLogFile`.
-Relative file paths are resolved next to the loaded config file.
+Relative file paths are resolved under `--log-dir` when provided, otherwise
+under the current working directory. The installed default config leaves file
+logging disabled.
 
 Config validation warnings are written to the application log at startup.
 DISPatch reports unknown JSON keys, invalid address strings, invalid multicast
@@ -158,20 +162,23 @@ UDP port without address reuse enabled.
 ## Local Test Federate
 
 Set `testFederate.enabled` in `dispatch.json` to run in-process UDP responders
-for local testing. When enabled, the UI shows a Test Federates status line with
-the bind state and editable site/application/entity controls for the first
-configured federate. The entity IDs come from `testFederate.entityIds`. The
-responders listen on the configured destination address and port, accept DIS6
-Simulation Management state-transition requests addressed to one of those IDs
-or to the broadcast entity ID, and send accepted responses back to the manager:
+for local testing. The installed default config keeps them disabled; use
+`--config /usr/local/etc/dispatch_debug.json` as a starting point for local
+testing. When enabled, the UI shows a Test Federates status line with the bind
+state and editable site/application/entity controls for each configured
+federate. The entity IDs come from `testFederate.entityIds`. The responders
+listen on the configured destination address and port, accept DIS6 Simulation
+Management state-transition requests addressed to one of those IDs or to an
+entity ID with `65535` wildcard fields, and send accepted responses back to the
+manager:
 
 - `Initialize`: Action Response PDU
 - `Start`, `Pause`, `Stop`, and `Reset`: Acknowledge PDU
 
 When both test federates and heartbeat tracking are enabled, each configured
 federate periodically sends an empty Comment PDU addressed to the manager.
-Select `Dead (stop heartbeat)` in the Test Federate box to stop those messages
-and exercise the configured timeout; clear it to resume heartbeats.
+Select `Stop heartbeat` in the Test Federate box to stop those messages and
+exercise the configured timeout; clear it to resume heartbeats.
 
 When localhost mode puts the manager and test federate on the same unicast
 address and port, DISPatch routes test-federate requests through the manager

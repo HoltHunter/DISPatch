@@ -183,8 +183,7 @@ auto incomingResponseWarnings(const QByteArray &datagram,
         }
 
         const EntityId origin = readEntityId(datagram, OriginEntityOffset);
-        if (configuredTarget.entity != BroadcastEntityIdValue
-            && !entityIdsMatch(origin, configuredTarget)) {
+        if (!entityIdAddresses(configuredTarget, origin)) {
             warnings.append(QStringLiteral("response origin %1 does not match configured target ID %2")
                                 .arg(entityIdString(origin), entityIdString(configuredTarget)));
         }
@@ -220,14 +219,38 @@ auto dummyRequestWarnings(const QByteArray &datagram,
 
     if (datagram.size() >= TargetEntityOffset + EntityIdByteLength) {
         const EntityId receivingEntity = readEntityId(datagram, TargetEntityOffset);
-        if (!entityIdsMatch(receivingEntity, federateId)
-            && !isBroadcastEntityId(receivingEntity)) {
+        if (!entityIdAddresses(receivingEntity, federateId)) {
             warnings.append(QStringLiteral("request target %1 does not match dummy federate ID %2")
                                 .arg(entityIdString(receivingEntity), entityIdString(federateId)));
         }
     }
 
     return warnings;
+}
+
+auto responseLooksIntendedForManager(const QByteArray &datagram,
+                                     const DisConfig &config,
+                                     const EntityId &configuredTarget) -> bool
+{
+    if (datagram.size() < TargetEntityOffset + EntityIdByteLength
+        || static_cast<quint8>(datagram[PduVersionOffset]) != DisVersion
+        || static_cast<quint8>(datagram[PduExerciseIdOffset]) != config.exerciseId
+        || static_cast<quint8>(datagram[PduFamilyOffset]) != SimManagementFamily) {
+        return false;
+    }
+
+    const quint8 pduType = static_cast<quint8>(datagram[PduTypeOffset]);
+    if (!isResponsePduType(pduType)) {
+        return false;
+    }
+
+    const EntityId target = readEntityId(datagram, TargetEntityOffset);
+    if (!entityIdsMatch(target, config.managerId)) {
+        return false;
+    }
+
+    const EntityId origin = readEntityId(datagram, OriginEntityOffset);
+    return entityIdAddresses(configuredTarget, origin);
 }
 
 auto committedSpinBoxValue(const QSpinBox *spinBox) -> int
@@ -844,7 +867,7 @@ auto MainWindow::updateListenMulticastGroup() -> bool
     const QHostAddress group = configuredMulticastGroup(&groupError);
     if (!groupError.isEmpty()) {
         statusBar()->showMessage(groupError);
-        appendLog(groupError, LogLevel::Warn);
+        appendLogOnce(&lastListenSocketIssue_, groupError, LogLevel::Warn);
         return false;
     }
     if (group.isNull()) {
@@ -856,7 +879,7 @@ auto MainWindow::updateListenMulticastGroup() -> bool
     const QNetworkInterface interface = configuredMulticastInterface(&interfaceError);
     if (!interfaceError.isEmpty()) {
         statusBar()->showMessage(interfaceError);
-        appendLog(interfaceError, LogLevel::Warn);
+        appendLogOnce(&lastListenSocketIssue_, interfaceError, LogLevel::Warn);
         return false;
     }
 
@@ -872,7 +895,7 @@ auto MainWindow::updateListenMulticastGroup() -> bool
         const QString message = QStringLiteral("Listen multicast join failed for %1: %2")
                                     .arg(group.toString(), socket_->errorString());
         statusBar()->showMessage(message);
-        appendLog(message, LogLevel::Error);
+        appendLogOnce(&lastListenSocketIssue_, message, LogLevel::Error);
         return false;
     }
 
@@ -884,6 +907,7 @@ auto MainWindow::updateListenMulticastGroup() -> bool
     }
     appendLog(QStringLiteral("Listen socket joined multicast group %1%2")
                   .arg(group.toString(), interfaceDetail));
+    lastListenSocketIssue_.clear();
     return true;
 }
 
@@ -897,7 +921,7 @@ void MainWindow::updateDummyFederateMulticastGroup(const QHostAddress &group)
     QString interfaceError;
     const QNetworkInterface interface = configuredMulticastInterface(&interfaceError);
     if (!interfaceError.isEmpty()) {
-        appendLog(interfaceError, LogLevel::Warn);
+        appendLogOnce(&lastDummyFederateMulticastIssue_, interfaceError, LogLevel::Warn);
         return;
     }
 
@@ -910,14 +934,16 @@ void MainWindow::updateDummyFederateMulticastGroup(const QHostAddress &group)
     const bool joined = interface.isValid() ? dummyFederateSocket_->joinMulticastGroup(group, interface)
                                             : dummyFederateSocket_->joinMulticastGroup(group);
     if (!joined) {
-        appendLog(QStringLiteral("Dummy federate multicast join failed for %1: %2")
-                      .arg(group.toString(), dummyFederateSocket_->errorString()),
-                  LogLevel::Error);
+        appendLogOnce(&lastDummyFederateMulticastIssue_,
+                      QStringLiteral("Dummy federate multicast join failed for %1: %2")
+                          .arg(group.toString(), dummyFederateSocket_->errorString()),
+                      LogLevel::Error);
         return;
     }
 
     joinedDummyFederateMulticastGroup_ = group;
     joinedDummyFederateMulticastInterface_ = interface;
+    lastDummyFederateMulticastIssue_.clear();
 }
 
 void MainWindow::addStateButton(QGridLayout *layout,
@@ -1001,10 +1027,9 @@ auto MainWindow::testFederateIdsForRequest(const QByteArray &datagram) const -> 
     }
 
     const EntityId receivingEntity = readEntityId(datagram, TargetEntityOffset);
-    const bool broadcast = isBroadcastEntityId(receivingEntity);
     QList<EntityId> matches;
     for (const EntityId &id : currentTestFederateIds()) {
-        if (broadcast || entityIdsMatch(receivingEntity, id)) {
+        if (entityIdAddresses(receivingEntity, id)) {
             matches.append(id);
         }
     }
@@ -1091,6 +1116,14 @@ auto MainWindow::dummyFederateStatusText(const DisConfig &config) const -> QStri
     return QStringLiteral("Running on %1:%2")
         .arg(config.destinationAddress.toString())
         .arg(config.destinationPort);
+}
+
+void MainWindow::rememberRequest(quint32 requestId, const QString &command)
+{
+    requestStates_[requestId] = command;
+    while (requestStates_.size() > MaxTrackedRequests) {
+        requestStates_.erase(requestStates_.begin());
+    }
 }
 
 void MainWindow::setDummyFederateDead(const EntityId &federateId, bool dead)
@@ -1250,14 +1283,16 @@ void MainWindow::bindListenSocket()
 {
     QHostAddress listenAddress;
     if (!parseConfigAddress(listenAddressEdit_->text(), &listenAddress)) {
-        statusBar()->showMessage(QStringLiteral("Invalid listen address"));
-        appendLog(QStringLiteral("Invalid listen address"), LogLevel::Warn);
+        const QString message = QStringLiteral("Invalid listen address");
+        statusBar()->showMessage(message);
+        appendLogOnce(&lastListenSocketIssue_, message, LogLevel::Warn);
         return;
     }
     QHostAddress destinationAddress;
     if (!parseConfigAddress(destinationAddressEdit_->text(), &destinationAddress)) {
-        statusBar()->showMessage(QStringLiteral("Invalid destination address"));
-        appendLog(QStringLiteral("Invalid destination address"), LogLevel::Warn);
+        const QString message = QStringLiteral("Invalid destination address");
+        statusBar()->showMessage(message);
+        appendLogOnce(&lastListenSocketIssue_, message, LogLevel::Warn);
         return;
     }
 
@@ -1272,6 +1307,7 @@ void MainWindow::bindListenSocket()
         if (!updateListenMulticastGroup()) {
             return;
         }
+        lastListenSocketIssue_.clear();
         if (statusBar()->currentMessage().startsWith(QStringLiteral("Invalid "))) {
             statusBar()->showMessage(listeningMessage);
         }
@@ -1282,8 +1318,9 @@ void MainWindow::bindListenSocket()
     joinedListenMulticastGroup_ = QHostAddress();
     const bool bound = socket_->bind(bindAddress, listenPort, udpBindMode());
     if (!bound) {
-        statusBar()->showMessage(QStringLiteral("Listen bind failed: %1").arg(socket_->errorString()));
-        appendLog(QStringLiteral("Listen bind failed: %1").arg(socket_->errorString()), LogLevel::Error);
+        const QString message = QStringLiteral("Listen bind failed: %1").arg(socket_->errorString());
+        statusBar()->showMessage(message);
+        appendLogOnce(&lastListenSocketIssue_, message, LogLevel::Error);
         return;
     }
 
@@ -1292,6 +1329,7 @@ void MainWindow::bindListenSocket()
     boundPort_ = listenPort;
     if (updateListenMulticastGroup()) {
         statusBar()->showMessage(listeningMessage);
+        lastListenSocketIssue_.clear();
     }
 }
 
@@ -1304,8 +1342,9 @@ void MainWindow::bindDummyFederateSocket()
     bool configOk = false;
     const auto config = currentConfig(&configOk);
     if (!configOk) {
-        statusBar()->showMessage(QStringLiteral("Invalid network address"));
-        appendLog(QStringLiteral("Invalid network address"), LogLevel::Warn);
+        const QString message = QStringLiteral("Invalid network address");
+        statusBar()->showMessage(message);
+        appendLogOnce(&lastDummyFederateIssue_, message, LogLevel::Warn);
         if (dummyFederateStatusLabel_ != nullptr) {
             dummyFederateStatusLabel_->setText(QStringLiteral("Configured: enabled, waiting for valid network settings"));
         }
@@ -1324,6 +1363,7 @@ void MainWindow::bindDummyFederateSocket()
         if (dummyFederateStatusLabel_ != nullptr) {
             dummyFederateStatusLabel_->setText(dummyFederateStatusText(config));
         }
+        lastDummyFederateIssue_.clear();
         return;
     }
 
@@ -1342,6 +1382,7 @@ void MainWindow::bindDummyFederateSocket()
         if (dummyFederateStatusLabel_ != nullptr) {
             dummyFederateStatusLabel_->setText(dummyFederateStatusText(config));
         }
+        lastDummyFederateIssue_.clear();
         return;
     }
 
@@ -1350,11 +1391,12 @@ void MainWindow::bindDummyFederateSocket()
     const QHostAddress bindAddress = dummyFederateBindAddress(config.destinationAddress);
     const bool bound = dummyFederateSocket_->bind(bindAddress, config.destinationPort, udpBindMode());
     if (!bound) {
-        appendLog(QStringLiteral("Dummy federate bind failed on %1:%2: %3")
-                      .arg(bindAddress.toString())
-                      .arg(config.destinationPort)
-                      .arg(dummyFederateSocket_->errorString()),
-                  LogLevel::Error);
+        appendLogOnce(&lastDummyFederateIssue_,
+                      QStringLiteral("Dummy federate bind failed on %1:%2: %3")
+                          .arg(bindAddress.toString())
+                          .arg(config.destinationPort)
+                          .arg(dummyFederateSocket_->errorString()),
+                      LogLevel::Error);
         if (dummyFederateStatusLabel_ != nullptr) {
             dummyFederateStatusLabel_->setText(QStringLiteral("Bind failed on %1:%2")
                                                    .arg(bindAddress.toString())
@@ -1370,6 +1412,7 @@ void MainWindow::bindDummyFederateSocket()
     if (dummyFederateStatusLabel_ != nullptr) {
         dummyFederateStatusLabel_->setText(dummyFederateStatusText(config));
     }
+    lastDummyFederateIssue_.clear();
     appendLog(QStringLiteral("Dummy federate listening on %1:%2")
                   .arg(config.destinationAddress.toString())
                   .arg(config.destinationPort));
@@ -1422,7 +1465,7 @@ void MainWindow::sendStateCommand(SimulationCommand command)
         dummyFederateEnabled_ ? testFederateIdsForRequest(pdu) : QList<EntityId>();
     if (written != pdu.size()) {
         if (!localTestFederateIds.isEmpty()) {
-            requestStates_[requestId] = commandName(command);
+            rememberRequest(requestId, commandName(command));
             appendLog(QStringLiteral("Network send failed for %1 request %2; using built-in test federates only: %3")
                           .arg(commandName(command))
                           .arg(requestId)
@@ -1447,7 +1490,7 @@ void MainWindow::sendStateCommand(SimulationCommand command)
         return;
     }
 
-    requestStates_[requestId] = commandName(command);
+    rememberRequest(requestId, commandName(command));
     QString detail;
     if (command == SimulationCommand::Start) {
         const QString realWorldTime =
@@ -1640,8 +1683,7 @@ void MainWindow::respondFromDummyFederate(const QByteArray &datagram,
 
     const quint32 requestId = requestIdFromResponse(datagram, static_cast<quint8>(pduType));
     const EntityId receivingEntity = readEntityId(datagram, TargetEntityOffset);
-    if (!entityIdsMatch(receivingEntity, federateId)
-        && !isBroadcastEntityId(receivingEntity)) {
+    if (!entityIdAddresses(receivingEntity, federateId)) {
         appendLog(QStringLiteral("Dummy federate ignored %1 request %2 for entity %3; configured as %4")
                       .arg(pduTypeName(static_cast<quint8>(pduType)))
                       .arg(requestId)
@@ -1701,6 +1743,9 @@ void MainWindow::appendMessageRow(const QByteArray &datagram,
     const quint8 pduType =
         datagram.size() > PduTypeOffset ? static_cast<quint8>(datagram[PduTypeOffset]) : 0;
     const quint32 requestId = requestIdFromResponse(datagram, pduType);
+    while (responseTable_->rowCount() >= MaxMessageRows) {
+        responseTable_->removeRow(0);
+    }
     const int row = responseTable_->rowCount();
     responseTable_->insertRow(row);
     responseTable_->setItem(row, 0, new QTableWidgetItem(QTime::currentTime().toString("HH:mm:ss.zzz")));
@@ -1744,12 +1789,21 @@ void MainWindow::recordResponse(const QByteArray &datagram, const QHostAddress &
     }
 
     const quint32 requestId = requestIdFromResponse(datagram, pduType);
+    bool configOk = false;
+    const auto config = currentConfig(&configOk);
     if (!requestStates_.contains(requestId)) {
+        if (configOk && responseLooksIntendedForManager(datagram, config, currentTargetId())) {
+            const QStringList warnings =
+                incomingResponseWarnings(datagram, config, currentTargetId(), false);
+            appendLog(QStringLiteral("Dropped expected response candidate from %1 (%2 bytes): %3")
+                          .arg(peerString(sender, senderPort))
+                          .arg(datagram.size())
+                          .arg(warnings.join(QStringLiteral("; "))),
+                      LogLevel::Warn);
+        }
         return;
     }
 
-    bool configOk = false;
-    const auto config = currentConfig(&configOk);
     if (configOk) {
         const QStringList warnings =
             incomingResponseWarnings(datagram, config, currentTargetId(), true);
@@ -1798,6 +1852,18 @@ void MainWindow::appendLog(const QString &message, LogLevel level)
     log_->setTextCursor(cursor);
     log_->ensureCursorVisible();
     writeLogFileLine(&logFile_, line);
+}
+
+void MainWindow::appendLogOnce(QString *lastMessage, const QString &message, LogLevel level)
+{
+    if (lastMessage != nullptr && *lastMessage == message) {
+        return;
+    }
+
+    if (lastMessage != nullptr) {
+        *lastMessage = message;
+    }
+    appendLog(message, level);
 }
 
 auto MainWindow::shouldLog(LogLevel messageLevel, LogLevel configuredLevel) -> bool
@@ -1849,8 +1915,8 @@ auto MainWindow::configuredLogPath(const QString &path) const -> QString
         return path;
     }
 
-    if (!appConfig_.configPath.isEmpty()) {
-        return QDir(QFileInfo(appConfig_.configPath).absolutePath()).filePath(path);
+    if (!appConfig_.logDir.isEmpty()) {
+        return QDir(appConfig_.logDir).filePath(path);
     }
 
     return QDir::current().filePath(path);

@@ -26,16 +26,6 @@ void writeEntityId(QDataStream &out, const EntityId &entityId)
     out << entityId.site << entityId.application << entityId.entity;
 }
 
-auto entityIdAddresses(const EntityId &address, const EntityId &entity) -> bool
-{
-    const auto fieldMatches = [](quint16 addressField, quint16 entityField) -> bool {
-        return addressField == BroadcastEntityIdValue || addressField == entityField;
-    };
-    return fieldMatches(address.site, entity.site)
-        && fieldMatches(address.application, entity.application)
-        && fieldMatches(address.entity, entity.entity);
-}
-
 auto makeHeader(const DisConfig &config,
                 PduType pduType,
                 quint16 length,
@@ -175,6 +165,16 @@ auto entityIdsMatch(const EntityId &left, const EntityId &right) -> bool
 {
     return left.site == right.site && left.application == right.application
         && left.entity == right.entity;
+}
+
+auto entityIdAddresses(const EntityId &address, const EntityId &entity) -> bool
+{
+    const auto fieldMatches = [](quint16 addressField, quint16 entityField) -> bool {
+        return addressField == BroadcastEntityIdValue || addressField == entityField;
+    };
+    return fieldMatches(address.site, entity.site)
+        && fieldMatches(address.application, entity.application)
+        && fieldMatches(address.entity, entity.entity);
 }
 
 auto entityIdString(const EntityId &entityId) -> QString
@@ -358,7 +358,7 @@ auto isSimulationRequestForEntity(const QByteArray &datagram, const EntityId &en
     const quint8 pduType = static_cast<quint8>(datagram[PduTypeOffset]);
     const bool isRequest = pduType == StartResumePdu || pduType == StopFreezePdu
         || pduType == ActionRequestPdu;
-    return isRequest && entityIdsMatch(readEntityId(datagram, TargetEntityOffset), entityId);
+    return isRequest && entityIdAddresses(readEntityId(datagram, TargetEntityOffset), entityId);
 }
 
 auto entityIdString(const QByteArray &bytes, int offset) -> QString

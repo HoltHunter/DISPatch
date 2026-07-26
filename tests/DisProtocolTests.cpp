@@ -111,6 +111,18 @@ TEST_CASE("Simulation requests are matched to their receiving entity")
     CHECK_FALSE(isSimulationRequestForEntity(response, config.targetId));
 }
 
+TEST_CASE("Simulation request entity matching supports partial wildcards")
+{
+    DisConfig config = testConfig();
+    config.targetId = EntityId{40, BroadcastEntityIdValue, 60};
+    const QByteArray request = makeStartResumePdu(config, 1);
+
+    CHECK(isSimulationRequestForEntity(request, EntityId{40, 50, 60}));
+    CHECK(isSimulationRequestForEntity(request, EntityId{40, 99, 60}));
+    CHECK_FALSE(isSimulationRequestForEntity(request, EntityId{41, 50, 60}));
+    CHECK(entityIdAddresses(EntityId{40, BroadcastEntityIdValue, 60}, EntityId{40, 50, 60}));
+}
+
 TEST_CASE("Comment PDU identifies its sender as a heartbeat when addressed to the manager")
 {
     const DisConfig config = testConfig();

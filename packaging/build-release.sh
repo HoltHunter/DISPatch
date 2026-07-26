@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly root_dir="$(pwd)"
 readonly deploy_dir="/tmp/dispatch-runtime"
-readonly out_dir="/out"
+readonly out_dir="${DISPATCH_OUT_DIR:-/out}"
 
 version="${DISPATCH_VERSION:-}"
 if [[ -z "${version}" ]]; then
@@ -24,8 +24,9 @@ arch="$(uname -m)"
 release_name="DISPatch-${version}-rhel8-${arch}"
 stage_dir="/tmp/${release_name}"
 
-rm -rf "${deploy_dir}" "${stage_dir}" "${out_dir}"
+rm -rf "${deploy_dir}" "${stage_dir}"
 mkdir -p "${stage_dir}/bin" "${stage_dir}/lib" "${stage_dir}/plugins" "${out_dir}"
+rm -f "${out_dir}/${release_name}.tar.gz" "${out_dir}/${release_name}.tar.gz.sha256"
 
 conan profile detect --force
 conan install "${root_dir}" \
@@ -51,6 +52,7 @@ fi
 
 cp -a "${binary_path}" "${stage_dir}/bin/dispatch"
 cp -a "${root_dir}/etc/dispatch.json" "${stage_dir}/bin/dispatch.json"
+cp -a "${root_dir}/etc/dispatch_debug.json" "${stage_dir}/bin/dispatch_debug.json"
 
 while IFS= read -r library_path; do
     cp -Lf "${library_path}" "${stage_dir}/lib/$(basename "${library_path}")"

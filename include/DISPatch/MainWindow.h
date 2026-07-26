@@ -113,12 +113,14 @@ private:
     void setDummyFederateDead(const EntityId &federateId, bool dead);
     void updateTestFederateState(const EntityId &federateId, const QString &state);
     [[nodiscard]] auto dummyFederateStatusText(const DisConfig &config) const -> QString;
+    void rememberRequest(quint32 requestId, const QString &command);
     void appendMessageRow(const QByteArray &datagram,
                           const QHostAddress &peer,
                           quint16 peerPort,
                           const QString &direction);
     void recordResponse(const QByteArray &datagram, const QHostAddress &sender, quint16 senderPort);
     void appendLog(const QString &message, LogLevel level = LogLevel::Debug);
+    void appendLogOnce(QString *lastMessage, const QString &message, LogLevel level);
     static auto shouldLog(LogLevel messageLevel, LogLevel configuredLevel) -> bool;
     static auto logLevelLabel(LogLevel level) -> QString;
     void setupLogFiles();
@@ -174,6 +176,9 @@ private:
     DestinationMode destinationMode_ = DestinationMode::Normal;
     QString savedDestinationAddressBeforeMode_;
     QString savedInterfaceNameBeforeMode_;
+    QString lastListenSocketIssue_;
+    QString lastDummyFederateIssue_;
+    QString lastDummyFederateMulticastIssue_;
     AppConfig appConfig_;
     QStringList configWarnings_;
     QMap<quint32, QString> requestStates_;

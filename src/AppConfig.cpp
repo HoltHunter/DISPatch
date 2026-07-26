@@ -6,11 +6,15 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonValue>
 #include <QtNetwork/QNetworkInterface>
+
+#include <cmath>
+#include <limits>
 
 #ifndef DISPATCH_SYSTEM_CONFIG_DIR
 #define DISPATCH_SYSTEM_CONFIG_DIR "/usr/local/etc"
@@ -19,6 +23,12 @@
 namespace dispatch {
 
 namespace {
+
+struct CommandLineOptions {
+    bool hasExplicitConfig = false;
+    QString configPath;
+    QString logDir;
+};
 
 auto rootConfigKeys() -> const QStringList &
 {
@@ -208,13 +218,15 @@ auto readInt(const QJsonObject &object,
     int parsed = fallback;
     if (value.isDouble()) {
         const double number = value.toDouble();
-        parsed = static_cast<int>(number);
-        if (number != parsed) {
+        if (!std::isfinite(number) || std::floor(number) != number
+            || number < std::numeric_limits<int>::min()
+            || number > std::numeric_limits<int>::max()) {
             warnings->append(QStringLiteral("%1.%2 must be an integer; using %3")
                                  .arg(path, key)
                                  .arg(fallback));
             return fallback;
         }
+        parsed = static_cast<int>(number);
     } else if (value.isString()) {
         bool parsedOk = false;
         parsed = value.toString().toInt(&parsedOk);
@@ -418,20 +430,58 @@ auto readReason(const QJsonObject &object,
     return static_cast<quint8>(readInt(object, key, fallback, 0, MaxUint8Value, warnings, path));
 }
 
-auto configSearchPaths() -> QStringList
+auto commandLineOptions(QStringList *warnings) -> CommandLineOptions
 {
+    CommandLineOptions options;
     const QStringList arguments = QCoreApplication::arguments();
     for (int i = 1; i < arguments.size(); ++i) {
-        if (arguments.at(i) == QStringLiteral("--config") && i + 1 < arguments.size()) {
-            return {arguments.at(i + 1)};
+        const QString argument = arguments.at(i);
+        if (argument == QStringLiteral("--config")) {
+            options.hasExplicitConfig = true;
+            if (i + 1 < arguments.size()) {
+                options.configPath = arguments.at(++i);
+            } else if (warnings != nullptr) {
+                warnings->append(QStringLiteral("--config requires a path; using built-in defaults"));
+            }
+        } else if (argument.startsWith(QStringLiteral("--config="))) {
+            options.hasExplicitConfig = true;
+            options.configPath = argument.mid(QStringLiteral("--config=").size());
+            if (options.configPath.isEmpty() && warnings != nullptr) {
+                warnings->append(QStringLiteral("--config requires a path; using built-in defaults"));
+            }
+        } else if (argument == QStringLiteral("--log-dir")) {
+            if (i + 1 < arguments.size()) {
+                options.logDir = arguments.at(++i);
+            } else if (warnings != nullptr) {
+                warnings->append(QStringLiteral("--log-dir requires a directory; using current working directory for relative log files"));
+            }
+        } else if (argument.startsWith(QStringLiteral("--log-dir="))) {
+            options.logDir = argument.mid(QStringLiteral("--log-dir=").size());
+            if (options.logDir.isEmpty() && warnings != nullptr) {
+                warnings->append(QStringLiteral("--log-dir requires a directory; using current working directory for relative log files"));
+            }
         }
     }
 
+    if (!options.logDir.isEmpty()) {
+        options.logDir = QFileInfo(options.logDir).absoluteFilePath();
+    }
+    return options;
+}
+
+auto configSearchPaths() -> QStringList
+{
     const QString fileName = QStringLiteral("dispatch.json");
     return {QDir::home().filePath(fileName),
             QDir(QStringLiteral(DISPATCH_SYSTEM_CONFIG_DIR)).filePath(fileName),
             QDir::current().filePath(fileName),
             QDir(QCoreApplication::applicationDirPath()).filePath(fileName)};
+}
+
+auto withCommandLineOptions(AppConfig config, const CommandLineOptions &options) -> AppConfig
+{
+    config.logDir = options.logDir;
+    return config;
 }
 
 void validateNetworkConfig(const AppConfig &config, QStringList *warnings) // NOLINT(readability-function-cognitive-complexity)
@@ -815,14 +865,22 @@ auto loadAppConfig(const QString &path, QStringList *warnings) -> AppConfig
 
 auto loadAppConfig(QStringList *warnings) -> AppConfig
 {
+    const CommandLineOptions options = commandLineOptions(warnings);
+    if (options.hasExplicitConfig) {
+        if (options.configPath.isEmpty()) {
+            return withCommandLineOptions(AppConfig{}, options);
+        }
+        return withCommandLineOptions(loadAppConfig(options.configPath, warnings), options);
+    }
+
     for (const QString &path : configSearchPaths()) {
         if (QFile::exists(path)) {
-            return loadAppConfig(path, warnings);
+            return withCommandLineOptions(loadAppConfig(path, warnings), options);
         }
     }
 
     warnings->append(QStringLiteral("No dispatch.json found; using built-in defaults"));
-    return {};
+    return withCommandLineOptions(AppConfig{}, options);
 }
 
 } // namespace dispatch

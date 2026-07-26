@@ -50,14 +50,14 @@
     }
   },
   "log": {
-    "logs": false,
+    "logs": true,
     "logFile": "DISPatch.log",
     "logLevel": "debug",
-    "messageLogs": false,
+    "messageLogs": true,
     "messageLogFile": "DISPatch_messages.log"
   },
   "testFederate": {
-    "enabled": false,
+    "enabled": true,
     "entityIds": [
       {
         "site": 1,

@@ -202,6 +202,23 @@ TEST_CASE("Config rejects an invalid heartbeat timeout")
     CHECK(warnings.join(QLatin1Char('\n')).contains(QStringLiteral("config.heartbeat.timeout")));
 }
 
+TEST_CASE("Config rejects oversized integer values")
+{
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const QString path = writeConfig(directory, R"json({
+  "network": {
+    "destinationPort": 1000000000000
+  }
+})json");
+
+    QStringList warnings;
+    const AppConfig config = loadAppConfig(path, &warnings);
+
+    CHECK(config.destinationPort == 3000);
+    CHECK(warnings.join(QLatin1Char('\n')).contains(QStringLiteral("config.network.destinationPort")));
+}
+
 TEST_CASE("Config accepts stop/freeze reason labels")
 {
     CHECK(stopFreezeReasonLabel(RecessReason) == QStringLiteral("Recess"));

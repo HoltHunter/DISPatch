@@ -15,6 +15,7 @@ auto stopFreezeReasonForCommand(SimulationCommand command) -> quint8;
 auto frozenBehaviorForCommand(const DisConfig &config, SimulationCommand command) -> quint8;
 auto pduTypeName(quint8 pduType) -> QString;
 auto entityIdsMatch(const EntityId &left, const EntityId &right) -> bool;
+auto entityIdAddresses(const EntityId &address, const EntityId &entity) -> bool;
 auto isSimulationRequestForEntity(const QByteArray &datagram, const EntityId &entityId) -> bool;
 auto entityIdString(const EntityId &entityId) -> QString;
 auto makeStartResumePdu(const DisConfig &config, quint32 requestId) -> QByteArray;
