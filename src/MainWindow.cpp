@@ -32,7 +32,9 @@
 #include <QtWidgets/QPlainTextEdit>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QSpinBox>
+#include <QtWidgets/QStackedWidget>
 #include <QtWidgets/QStatusBar>
+#include <QtWidgets/QTabBar>
 #include <QtWidgets/QTableWidget>
 #include <QtWidgets/QVBoxLayout>
 
@@ -377,7 +379,7 @@ MainWindow::MainWindow(QWidget *parent)
     dummyFederateStatusLabel_ = new QLabel(QStringLiteral("Configured: enabled, waiting to bind"), testGroup);
     dummyFederateStatusLabel_->setWordWrap(true);
     testGroup->setMinimumWidth(TestFederateMinimumWidth);
-    testLayout->addWidget(dummyFederateStatusLabel_, 0, 0, 1, 5);
+    testLayout->addWidget(dummyFederateStatusLabel_, 0, 0, 1, 6);
     testLayout->addWidget(new QLabel(QStringLiteral("Entity ID")), 1, 0);
     testLayout->addWidget(new QLabel(QStringLiteral("Site")), 1, 1);
     testLayout->addWidget(new QLabel(QStringLiteral("App")), 1, 2);
@@ -396,23 +398,23 @@ MainWindow::MainWindow(QWidget *parent)
         controls.entitySpin = makeSmallSpinBox(testGroup, 0, BroadcastEntityIdValue, federateId.entity);
         controls.stateLabel = new QLabel(QStringLiteral("Idle"), testGroup);
         controls.stateLabel->setAlignment(Qt::AlignCenter);
-        controls.stateLabel->setMinimumWidth(90);
         controls.deadCheck = new QCheckBox(QStringLiteral("Stop heartbeat"), testGroup);
         controls.deadCheck->setEnabled(appConfig_.heartbeatEnabled);
         controls.deadCheck->setMinimumWidth(controls.deadCheck->sizeHint().width());
+        controls.stateLabel->setMinimumWidth(controls.deadCheck->sizeHint().width());
         auto *statusWidget = new QWidget(testGroup);
         auto *statusLayout = new QVBoxLayout(statusWidget);
         statusLayout->setContentsMargins(0, 0, 0, 0);
         statusLayout->setSpacing(2);
         statusLayout->addWidget(controls.stateLabel);
-        statusLayout->addWidget(controls.deadCheck);
+        statusLayout->addWidget(controls.deadCheck, 0, Qt::AlignLeft);
 
         const int row = index + 2;
         testLayout->addWidget(new QLabel(QStringLiteral("Federate %1").arg(index + 1)), row, 0);
         testLayout->addWidget(controls.siteSpin, row, 1);
         testLayout->addWidget(controls.applicationSpin, row, 2);
         testLayout->addWidget(controls.entitySpin, row, 3);
-        testLayout->addWidget(statusWidget, row, 4);
+        testLayout->addWidget(statusWidget, row, 4, Qt::AlignLeft);
         connect(controls.deadCheck, &QCheckBox::toggled, this, [this, controls](bool dead) -> void {
             setDummyFederateDead(makeEntityId(controls.siteSpin, controls.applicationSpin, controls.entitySpin),
                                  dead);
@@ -426,10 +428,28 @@ MainWindow::MainWindow(QWidget *parent)
     identityLayout->setSpacing(StandardSpacing);
     identityLayout->addWidget(disGroup, 1);
     if (appConfig_.testFederateEnabled) {
-        identityLayout->addWidget(testGroup, 2);
+        identityLayout->addWidget(testGroup, 0, Qt::AlignRight);
     }
 
-    responseTable_ = new QTableWidget(0, ResponseTableColumnCount, central);
+    auto *logPane = new QWidget(central);
+    auto *logPaneLayout = new QVBoxLayout(logPane);
+    logPaneLayout->setContentsMargins(0, 0, 0, 0);
+    logPaneLayout->setSpacing(0);
+
+    auto *logTabBar = new QTabBar(logPane);
+    logTabBar->setExpanding(false);
+    logTabBar->addTab(QStringLiteral("Messages"));
+    logTabBar->addTab(QStringLiteral("Event Log"));
+
+    auto *logTabBarLayout = new QHBoxLayout();
+    logTabBarLayout->setContentsMargins(0, 0, 0, 0);
+    logTabBarLayout->setSpacing(0);
+    logTabBarLayout->addWidget(logTabBar);
+    logTabBarLayout->addStretch(1);
+
+    auto *logStack = new QStackedWidget(logPane);
+
+    responseTable_ = new QTableWidget(0, ResponseTableColumnCount, logStack);
     responseTable_->setHorizontalHeaderLabels(
         {QStringLiteral("Time"), QStringLiteral("Dir"), QStringLiteral("Peer"), QStringLiteral("PDU"),
          QStringLiteral("Request"), QStringLiteral("Summary")});
@@ -444,10 +464,14 @@ MainWindow::MainWindow(QWidget *parent)
     responseTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
     responseTable_->setAlternatingRowColors(true);
 
-    log_ = new QPlainTextEdit(central);
+    log_ = new QPlainTextEdit(logStack);
     log_->setReadOnly(true);
     log_->setMaximumBlockCount(MaxLogBlocks);
     setupLogFiles();
+
+    logStack->addWidget(responseTable_);
+    logStack->addWidget(log_);
+    connect(logTabBar, &QTabBar::currentChanged, logStack, &QStackedWidget::setCurrentIndex);
 
     auto *logControlsLayout = new QHBoxLayout();
     auto *clearMessagesButton = new QPushButton(QStringLiteral("Clear Messages"), central);
@@ -467,8 +491,9 @@ MainWindow::MainWindow(QWidget *parent)
     rootLayout->addLayout(networkCommandLayout);
     rootLayout->addLayout(identityLayout);
     rootLayout->addLayout(logControlsLayout);
-    rootLayout->addWidget(responseTable_, 1);
-    rootLayout->addWidget(log_, 1);
+    logPaneLayout->addLayout(logTabBarLayout);
+    logPaneLayout->addWidget(logStack, 1);
+    rootLayout->addWidget(logPane, 1);
     setCentralWidget(central);
     resize(DefaultWindowWidth, DefaultWindowHeight);
 
