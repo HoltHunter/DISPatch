@@ -4,6 +4,7 @@
 #include <DISPatch/DisTypes.h>
 #include <DISPatch/Theme.h>
 
+#include <QtCore/QList>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 #include <QtCore/QtGlobal>
@@ -48,7 +49,7 @@ struct AppConfig {
     bool messageLogs = false;
     QString messageLogFile = QStringLiteral("DISPatch_messages.log");
     bool testFederateEnabled = false;
-    EntityId testFederateId = EntityId{1, 1, 0};
+    QList<EntityId> testFederateIds{EntityId{1, 1, 0}};
     QString configPath;
 };
 

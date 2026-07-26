@@ -43,6 +43,14 @@ private:
         bool alive = true;
     };
 
+    struct TestFederateControls {
+        QSpinBox *siteSpin = nullptr;
+        QSpinBox *applicationSpin = nullptr;
+        QSpinBox *entitySpin = nullptr;
+        QLabel *stateLabel = nullptr;
+        QCheckBox *deadCheck = nullptr;
+    };
+
     enum class DestinationMode : quint8 {
         Normal,
         Broadcast,
@@ -80,7 +88,9 @@ private:
                         int columnSpan);
     auto currentConfig(bool *configOk = nullptr) const -> DisConfig;
     [[nodiscard]] auto currentTestFederateId() const -> EntityId;
+    [[nodiscard]] auto currentTestFederateIds() const -> QList<EntityId>;
     [[nodiscard]] auto currentTargetId() const -> EntityId;
+    [[nodiscard]] auto testFederateIdsForRequest(const QByteArray &datagram) const -> QList<EntityId>;
     static auto makeEntityId(const QSpinBox *site, const QSpinBox *application, const QSpinBox *entity) -> EntityId;
     void setTargetIdControls(const EntityId &entityId);
     void setTargetIdControlsEnabled(bool enabled);
@@ -92,11 +102,16 @@ private:
     void sendStateCommand(SimulationCommand command);
     void readDatagrams();
     void readDummyFederateDatagrams();
-    void respondFromDummyFederate(const QByteArray &datagram, const QHostAddress &sender, quint16 senderPort);
+    void respondFromDummyFederate(const QByteArray &datagram,
+                                  const QHostAddress &sender,
+                                  quint16 senderPort,
+                                  const EntityId &federateId,
+                                  bool directToManager = false);
     void updateHeartbeat(const EntityId &entityId);
     void checkHeartbeatTimeouts();
     void sendDummyFederateHeartbeat();
-    void setDummyFederateDead(bool dead);
+    void setDummyFederateDead(const EntityId &federateId, bool dead);
+    void updateTestFederateState(const EntityId &federateId, const QString &state);
     [[nodiscard]] auto dummyFederateStatusText(const DisConfig &config) const -> QString;
     void appendMessageRow(const QByteArray &datagram,
                           const QHostAddress &peer,
@@ -135,15 +150,13 @@ private:
     QCheckBox *startUseLiteralZeroCheck_ = nullptr;
     EntityId savedTargetIdBeforeBroadcast_;
     QLabel *dummyFederateStatusLabel_ = nullptr;
-    QSpinBox *dummyFederateSiteSpin_ = nullptr;
-    QSpinBox *dummyFederateApplicationSpin_ = nullptr;
-    QSpinBox *dummyFederateEntitySpin_ = nullptr;
-    QCheckBox *dummyFederateDeadCheck_ = nullptr;
+    QList<TestFederateControls> testFederateControls_;
     QTableWidget *responseTable_ = nullptr;
     QPlainTextEdit *log_ = nullptr;
     QFile logFile_;
     QFile messageLogFile_;
     QUdpSocket *socket_ = nullptr;
+    QUdpSocket *commandSocket_ = nullptr;
     QUdpSocket *dummyFederateSocket_ = nullptr;
     QTimer *heartbeatCheckTimer_ = nullptr;
     QTimer *dummyHeartbeatTimer_ = nullptr;
@@ -158,7 +171,6 @@ private:
     quint32 nextRequestId_ = 1;
     bool dummyFederateEnabled_ = false;
     bool dummyFederateSharesListenSocket_ = false;
-    bool dummyHeartbeatSendFailed_ = false;
     DestinationMode destinationMode_ = DestinationMode::Normal;
     QString savedDestinationAddressBeforeMode_;
     QString savedInterfaceNameBeforeMode_;

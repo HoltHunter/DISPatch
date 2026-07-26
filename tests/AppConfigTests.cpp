@@ -122,6 +122,48 @@ TEST_CASE("Config defaults multicast loopback off")
     CHECK_FALSE(config.multicastLoopback);
 }
 
+TEST_CASE("Config loads multiple test federates")
+{
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const QString path = writeConfig(directory, R"json({
+  "testFederate": {
+    "enabled": true,
+    "entityIds": [
+      {"site": 1, "application": 1, "entity": 2},
+      {"site": 1, "application": 1, "entity": 3}
+    ]
+  }
+})json");
+
+    QStringList warnings;
+    const AppConfig config = loadAppConfig(path, &warnings);
+
+    CHECK(warnings.isEmpty());
+    CHECK(config.testFederateEnabled);
+    REQUIRE(config.testFederateIds.size() == 2);
+    CHECK(config.testFederateIds.at(0).entity == 2);
+    CHECK(config.testFederateIds.at(1).entity == 3);
+}
+
+TEST_CASE("Config rejects invalid test federate list")
+{
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const QString path = writeConfig(directory, R"json({
+  "testFederate": {
+    "entityIds": "1:1:1"
+  }
+})json");
+
+    QStringList warnings;
+    const AppConfig config = loadAppConfig(path, &warnings);
+
+    REQUIRE(config.testFederateIds.size() == 1);
+    CHECK(config.testFederateIds.first().entity == 0);
+    CHECK(warnings.join(QLatin1Char('\n')).contains(QStringLiteral("config.testFederate.entityIds")));
+}
+
 TEST_CASE("Config loads heartbeat settings")
 {
     QTemporaryDir directory;

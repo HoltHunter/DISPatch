@@ -77,6 +77,37 @@ auto isRequestPduType(quint8 pduType) -> bool
     return pduType == StartResumePdu || pduType == StopFreezePdu || pduType == ActionRequestPdu;
 }
 
+auto isBroadcastEntityId(const EntityId &entityId) -> bool
+{
+    return entityId.site == BroadcastEntityIdValue
+        && entityId.application == BroadcastEntityIdValue
+        && entityId.entity == BroadcastEntityIdValue;
+}
+
+auto stateForAcceptedRequest(quint8 pduType, const QByteArray &datagram) -> QString
+{
+    if (pduType == ActionRequestPdu) {
+        return QStringLiteral("Initialized");
+    }
+    if (pduType == StartResumePdu) {
+        return QStringLiteral("Running");
+    }
+    if (pduType != StopFreezePdu) {
+        return QStringLiteral("Active");
+    }
+
+    switch (static_cast<quint8>(datagram[StopFreezeReasonOffset])) {
+    case RecessReason:
+        return QStringLiteral("Paused");
+    case TerminationReason:
+        return QStringLiteral("Stopped");
+    case StopForResetReason:
+        return QStringLiteral("Reset");
+    default:
+        return QStringLiteral("Frozen");
+    }
+}
+
 void addCommonDatagramWarnings(const QByteArray &datagram, const DisConfig &config, QStringList *warnings)
 {
     if (datagram.size() < DisHeaderLength) {
@@ -187,7 +218,8 @@ auto dummyRequestWarnings(const QByteArray &datagram,
 
     if (datagram.size() >= TargetEntityOffset + EntityIdByteLength) {
         const EntityId receivingEntity = readEntityId(datagram, TargetEntityOffset);
-        if (!entityIdsMatch(receivingEntity, federateId)) {
+        if (!entityIdsMatch(receivingEntity, federateId)
+            && !isBroadcastEntityId(receivingEntity)) {
             warnings.append(QStringLiteral("request target %1 does not match dummy federate ID %2")
                                 .arg(entityIdString(receivingEntity), entityIdString(federateId)));
         }
@@ -331,33 +363,70 @@ MainWindow::MainWindow(QWidget *parent)
     disLayout->addLayout(heartbeatLayout_, 0, 6, 3, 1);
     disLayout->setColumnStretch(IdentityStretchColumn, 1);
     connect(targetBroadcastCheck_, &QCheckBox::toggled, this, &MainWindow::setTargetBroadcast);
+    if (isBroadcastEntityId(appConfig_.targetId)) {
+        const QSignalBlocker blocker(targetBroadcastCheck_);
+        targetBroadcastCheck_->setChecked(true);
+        savedTargetIdBeforeBroadcast_ = appConfig_.testFederateIds.isEmpty()
+            ? EntityId{1, 1, 0}
+            : appConfig_.testFederateIds.first();
+        setTargetIdControlsEnabled(false);
+    }
 
-    auto *testGroup = new QGroupBox(QStringLiteral("Test Federate"), central);
+    auto *testGroup = new QGroupBox(QStringLiteral("Test Federates"), central);
     auto *testLayout = new QGridLayout(testGroup);
     dummyFederateStatusLabel_ = new QLabel(QStringLiteral("Configured: enabled, waiting to bind"), testGroup);
     dummyFederateStatusLabel_->setWordWrap(true);
-    dummyFederateSiteSpin_ = makeSmallSpinBox(testGroup, 0, BroadcastEntityIdValue, appConfig_.testFederateId.site);
-    dummyFederateApplicationSpin_ =
-        makeSmallSpinBox(testGroup, 0, BroadcastEntityIdValue, appConfig_.testFederateId.application);
-    dummyFederateEntitySpin_ = makeSmallSpinBox(testGroup, 0, BroadcastEntityIdValue, appConfig_.testFederateId.entity);
-    dummyFederateDeadCheck_ = new QCheckBox(QStringLiteral("Dead (stop heartbeat)"), testGroup);
-    dummyFederateDeadCheck_->setEnabled(appConfig_.heartbeatEnabled);
     testGroup->setMinimumWidth(TestFederateMinimumWidth);
-    testLayout->addWidget(dummyFederateStatusLabel_, 0, 0, 1, 4);
+    testLayout->addWidget(dummyFederateStatusLabel_, 0, 0, 1, 5);
     testLayout->addWidget(new QLabel(QStringLiteral("Entity ID")), 1, 0);
-    testLayout->addWidget(dummyFederateSiteSpin_, 1, 1);
-    testLayout->addWidget(dummyFederateApplicationSpin_, 1, 2);
-    testLayout->addWidget(dummyFederateEntitySpin_, 1, 3);
-    testLayout->addWidget(dummyFederateDeadCheck_, 2, 0, 1, 4);
+    testLayout->addWidget(new QLabel(QStringLiteral("Site")), 1, 1);
+    testLayout->addWidget(new QLabel(QStringLiteral("App")), 1, 2);
+    testLayout->addWidget(new QLabel(QStringLiteral("Entity")), 1, 3);
+    testLayout->addWidget(new QLabel(QStringLiteral("Status")), 1, 4);
+
+    const QList<EntityId> configuredTestFederates = appConfig_.testFederateIds.isEmpty()
+        ? QList<EntityId>{EntityId{1, 1, 0}}
+        : appConfig_.testFederateIds;
+    for (int index = 0; index < configuredTestFederates.size(); ++index) {
+        const EntityId federateId = configuredTestFederates.at(index);
+        TestFederateControls controls;
+        controls.siteSpin = makeSmallSpinBox(testGroup, 0, BroadcastEntityIdValue, federateId.site);
+        controls.applicationSpin =
+            makeSmallSpinBox(testGroup, 0, BroadcastEntityIdValue, federateId.application);
+        controls.entitySpin = makeSmallSpinBox(testGroup, 0, BroadcastEntityIdValue, federateId.entity);
+        controls.stateLabel = new QLabel(QStringLiteral("Idle"), testGroup);
+        controls.stateLabel->setAlignment(Qt::AlignCenter);
+        controls.stateLabel->setMinimumWidth(90);
+        controls.deadCheck = new QCheckBox(QStringLiteral("Stop heartbeat"), testGroup);
+        controls.deadCheck->setEnabled(appConfig_.heartbeatEnabled);
+        controls.deadCheck->setMinimumWidth(controls.deadCheck->sizeHint().width());
+        auto *statusWidget = new QWidget(testGroup);
+        auto *statusLayout = new QVBoxLayout(statusWidget);
+        statusLayout->setContentsMargins(0, 0, 0, 0);
+        statusLayout->setSpacing(2);
+        statusLayout->addWidget(controls.stateLabel);
+        statusLayout->addWidget(controls.deadCheck);
+
+        const int row = index + 2;
+        testLayout->addWidget(new QLabel(QStringLiteral("Federate %1").arg(index + 1)), row, 0);
+        testLayout->addWidget(controls.siteSpin, row, 1);
+        testLayout->addWidget(controls.applicationSpin, row, 2);
+        testLayout->addWidget(controls.entitySpin, row, 3);
+        testLayout->addWidget(statusWidget, row, 4);
+        connect(controls.deadCheck, &QCheckBox::toggled, this, [this, controls](bool dead) -> void {
+            setDummyFederateDead(makeEntityId(controls.siteSpin, controls.applicationSpin, controls.entitySpin),
+                                 dead);
+        });
+        testFederateControls_.append(controls);
+    }
     testLayout->setColumnStretch(TestFederateStretchColumn, 1);
     testGroup->setVisible(appConfig_.testFederateEnabled);
-    connect(dummyFederateDeadCheck_, &QCheckBox::toggled, this, &MainWindow::setDummyFederateDead);
 
     auto *identityLayout = new QHBoxLayout();
     identityLayout->setSpacing(StandardSpacing);
-    identityLayout->addWidget(disGroup, 2);
+    identityLayout->addWidget(disGroup, 1);
     if (appConfig_.testFederateEnabled) {
-        identityLayout->addWidget(testGroup, 1);
+        identityLayout->addWidget(testGroup, 2);
     }
 
     responseTable_ = new QTableWidget(0, ResponseTableColumnCount, central);
@@ -406,6 +475,8 @@ MainWindow::MainWindow(QWidget *parent)
     socket_ = new QUdpSocket(this);
     updateSocketOptions(socket_, QHostAddress(destinationAddressEdit_->text()));
     connect(socket_, &QUdpSocket::readyRead, this, &MainWindow::readDatagrams);
+    commandSocket_ = new QUdpSocket(this);
+    updateSocketOptions(commandSocket_, QHostAddress(destinationAddressEdit_->text()));
     dummyFederateSocket_ = new QUdpSocket(this);
     connect(dummyFederateSocket_, &QUdpSocket::readyRead, this, &MainWindow::readDummyFederateDatagrams);
     heartbeatCheckTimer_ = new QTimer(this);
@@ -654,8 +725,7 @@ void MainWindow::updateSocketOptions(QUdpSocket *socket, const QHostAddress &des
     socket->setSocketOption(QAbstractSocket::MulticastLoopbackOption, appConfig_.multicastLoopback ? 1 : 0);
 
     const QNetworkInterface networkInterface = selectedNetworkInterface();
-    if (socket->state() == QAbstractSocket::BoundState
-        && networkInterface.isValid()
+    if (networkInterface.isValid()
         && destinationAddress.isMulticast()) {
         socket->setMulticastInterface(networkInterface);
     }
@@ -864,9 +934,56 @@ auto MainWindow::currentConfig(bool *configOk) const -> DisConfig
 
 auto MainWindow::currentTestFederateId() const -> EntityId
 {
-    return makeEntityId(dummyFederateSiteSpin_,
-                        dummyFederateApplicationSpin_,
-                        dummyFederateEntitySpin_);
+    if (testFederateControls_.isEmpty()) {
+        return EntityId{1, 1, 0};
+    }
+    const TestFederateControls &controls = testFederateControls_.first();
+    return makeEntityId(controls.siteSpin, controls.applicationSpin, controls.entitySpin);
+}
+
+auto MainWindow::currentTestFederateIds() const -> QList<EntityId>
+{
+    QList<EntityId> ids;
+    for (const TestFederateControls &controls : testFederateControls_) {
+        const EntityId id = makeEntityId(controls.siteSpin, controls.applicationSpin, controls.entitySpin);
+        bool duplicate = false;
+        for (const EntityId &existing : ids) {
+            if (entityIdsMatch(existing, id)) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) {
+            ids.append(id);
+        }
+    }
+    if (ids.isEmpty()) {
+        ids.append(EntityId{1, 1, 0});
+    }
+    return ids;
+}
+
+auto MainWindow::testFederateIdsForRequest(const QByteArray &datagram) const -> QList<EntityId>
+{
+    if (datagram.size() < TargetEntityOffset + EntityIdByteLength
+        || static_cast<quint8>(datagram[PduFamilyOffset]) != SimManagementFamily) {
+        return {};
+    }
+
+    const quint8 pduType = static_cast<quint8>(datagram[PduTypeOffset]);
+    if (!isRequestPduType(pduType)) {
+        return {};
+    }
+
+    const EntityId receivingEntity = readEntityId(datagram, TargetEntityOffset);
+    const bool broadcast = isBroadcastEntityId(receivingEntity);
+    QList<EntityId> matches;
+    for (const EntityId &id : currentTestFederateIds()) {
+        if (broadcast || entityIdsMatch(receivingEntity, id)) {
+            matches.append(id);
+        }
+    }
+    return matches;
 }
 
 auto MainWindow::currentTargetId() const -> EntityId
@@ -946,22 +1063,19 @@ void MainWindow::checkHeartbeatTimeouts()
 
 auto MainWindow::dummyFederateStatusText(const DisConfig &config) const -> QString
 {
-    const bool dead = dummyFederateDeadCheck_ != nullptr && dummyFederateDeadCheck_->isChecked();
-    return QStringLiteral("%1 on %2:%3 as %4")
-        .arg(dead ? QStringLiteral("Dead (heartbeat stopped)") : QStringLiteral("Running"))
+    return QStringLiteral("Running on %1:%2")
         .arg(config.destinationAddress.toString())
-        .arg(config.destinationPort)
-        .arg(entityIdString(currentTestFederateId()));
+        .arg(config.destinationPort);
 }
 
-void MainWindow::setDummyFederateDead(bool dead)
+void MainWindow::setDummyFederateDead(const EntityId &federateId, bool dead)
 {
     if (!dummyFederateEnabled_ || !appConfig_.heartbeatEnabled) {
         return;
     }
 
-    appendLog(dead ? QStringLiteral("Dummy federate heartbeat stopped")
-                   : QStringLiteral("Dummy federate heartbeat resumed"));
+    appendLog(dead ? QStringLiteral("Dummy federate %1 heartbeat stopped").arg(entityIdString(federateId))
+                   : QStringLiteral("Dummy federate %1 heartbeat resumed").arg(entityIdString(federateId)));
     bool configOk = false;
     const DisConfig config = currentConfig(&configOk);
     if (configOk && dummyFederateStatusLabel_ != nullptr) {
@@ -972,46 +1086,31 @@ void MainWindow::setDummyFederateDead(bool dead)
     }
 }
 
+void MainWindow::updateTestFederateState(const EntityId &federateId, const QString &state)
+{
+    for (const TestFederateControls &controls : testFederateControls_) {
+        const EntityId currentId = makeEntityId(controls.siteSpin, controls.applicationSpin, controls.entitySpin);
+        if (entityIdsMatch(currentId, federateId) && controls.stateLabel != nullptr) {
+            controls.stateLabel->setText(state);
+            return;
+        }
+    }
+}
+
 void MainWindow::sendDummyFederateHeartbeat()
 {
-    if (!dummyFederateEnabled_ || !appConfig_.heartbeatEnabled
-        || (dummyFederateDeadCheck_ != nullptr && dummyFederateDeadCheck_->isChecked())) {
+    if (!dummyFederateEnabled_ || !appConfig_.heartbeatEnabled) {
         return;
     }
 
-    bool configOk = false;
-    const DisConfig config = currentConfig(&configOk);
-    if (!configOk
-        || (!dummyFederateSharesListenSocket_
-            && dummyFederateSocket_->state() != QAbstractSocket::BoundState)) {
-        return;
-    }
-
-    DisConfig heartbeatConfig = config;
-    heartbeatConfig.managerId = currentTestFederateId();
-    heartbeatConfig.targetId = config.managerId;
-    const QByteArray heartbeat = makeCommentPdu(heartbeatConfig);
-    QHostAddress heartbeatAddress = effectiveSendAddress(config.destinationAddress);
-    quint16 heartbeatPort = config.destinationPort;
-    if (!config.destinationAddress.isMulticast() && !isBroadcastDestination(config.destinationAddress)) {
-        heartbeatAddress = effectiveListenAddress(config.listenAddress, config.destinationAddress);
-        heartbeatPort = config.listenPort;
-    }
-    const qint64 written = dummyFederateSocket_->writeDatagram(heartbeat,
-                                                                heartbeatAddress,
-                                                                heartbeatPort);
-    if (written != heartbeat.size()) {
-        if (!dummyHeartbeatSendFailed_) {
-            appendLog(QStringLiteral("Dummy federate failed to send heartbeat to %1:%2: %3")
-                          .arg(heartbeatAddress.toString())
-                          .arg(heartbeatPort)
-                          .arg(dummyFederateSocket_->errorString()),
-                      LogLevel::Error);
+    for (const TestFederateControls &controls : testFederateControls_) {
+        if (controls.deadCheck != nullptr && controls.deadCheck->isChecked()) {
+            continue;
         }
-        dummyHeartbeatSendFailed_ = true;
-        return;
+
+        const EntityId federateId = makeEntityId(controls.siteSpin, controls.applicationSpin, controls.entitySpin);
+        updateHeartbeat(federateId);
     }
-    dummyHeartbeatSendFailed_ = false;
 }
 
 auto MainWindow::makeEntityId(const QSpinBox *site, const QSpinBox *application, const QSpinBox *entity) -> EntityId
@@ -1195,7 +1294,7 @@ void MainWindow::bindDummyFederateSocket()
             dummyFederateBoundAddress_ = QHostAddress();
             dummyFederateBoundPort_ = 0;
             dummyFederateSharesListenSocket_ = true;
-            appendLog(QStringLiteral("Dummy federate sharing the manager listen socket for local unicast"));
+            appendLog(QStringLiteral("Dummy federate sharing the manager listen socket"));
         }
         if (dummyFederateStatusLabel_ != nullptr) {
             dummyFederateStatusLabel_->setText(dummyFederateStatusText(config));
@@ -1275,6 +1374,7 @@ void MainWindow::sendStateCommand(SimulationCommand command)
     }
 
     bindListenSocket();
+    updateSocketOptions(commandSocket_, config.destinationAddress);
     const quint32 requestId = nextRequestId_++;
     QByteArray pdu;
     switch (command) {
@@ -1292,12 +1392,32 @@ void MainWindow::sendStateCommand(SimulationCommand command)
     }
 
     const QHostAddress destinationAddress = effectiveSendAddress(config.destinationAddress);
-    const auto written = socket_->writeDatagram(pdu, destinationAddress, config.destinationPort);
+    const auto written = commandSocket_->writeDatagram(pdu, destinationAddress, config.destinationPort);
+    const QList<EntityId> localTestFederateIds =
+        dummyFederateEnabled_ ? testFederateIdsForRequest(pdu) : QList<EntityId>();
     if (written != pdu.size()) {
+        if (!localTestFederateIds.isEmpty()) {
+            requestStates_[requestId] = commandName(command);
+            appendLog(QStringLiteral("Network send failed for %1 request %2; using built-in test federates only: %3")
+                          .arg(commandName(command))
+                          .arg(requestId)
+                          .arg(commandSocket_->errorString()),
+                      LogLevel::Warn);
+            appendMessageRow(pdu, destinationAddress, config.destinationPort, QStringLiteral("Test Rx"));
+            for (const EntityId &federateId : localTestFederateIds) {
+                respondFromDummyFederate(pdu,
+                                         destinationAddress,
+                                         config.destinationPort,
+                                         federateId,
+                                         true);
+            }
+            return;
+        }
+
         appendLog(QStringLiteral("Failed to send %1 request %2: %3")
                       .arg(commandName(command))
                       .arg(requestId)
-                      .arg(socket_->errorString()),
+                      .arg(commandSocket_->errorString()),
                   LogLevel::Error);
         return;
     }
@@ -1329,6 +1449,16 @@ void MainWindow::sendStateCommand(SimulationCommand command)
                   .arg(pdu.size())
                   .arg(detail));
     appendMessageRow(pdu, destinationAddress, config.destinationPort, QStringLiteral("Tx"));
+    if (!localTestFederateIds.isEmpty()) {
+        appendMessageRow(pdu, destinationAddress, config.destinationPort, QStringLiteral("Test Rx"));
+        for (const EntityId &federateId : localTestFederateIds) {
+            respondFromDummyFederate(pdu,
+                                     destinationAddress,
+                                     config.destinationPort,
+                                     federateId,
+                                     true);
+        }
+    }
 }
 
 void MainWindow::readDatagrams()
@@ -1359,10 +1489,13 @@ void MainWindow::readDatagrams()
                       LogLevel::Warn);
             datagram.resize(static_cast<int>(bytesRead));
         }
+        const QList<EntityId> federateIds = testFederateIdsForRequest(datagram);
         if (dummyFederateEnabled_ && dummyFederateSharesListenSocket_
-            && isSimulationRequestForEntity(datagram, currentTestFederateId())) {
+            && !federateIds.isEmpty()) {
             appendMessageRow(datagram, sender, senderPort, QStringLiteral("Test Rx"));
-            respondFromDummyFederate(datagram, sender, senderPort);
+            for (const EntityId &federateId : federateIds) {
+                respondFromDummyFederate(datagram, sender, senderPort, federateId);
+            }
             continue;
         }
         recordResponse(datagram, sender, senderPort);
@@ -1406,15 +1539,22 @@ void MainWindow::readDummyFederateDatagrams()
                 continue;
             }
         }
-        if (!isSimulationRequestForEntity(datagram, currentTestFederateId())) {
+        const QList<EntityId> federateIds = testFederateIdsForRequest(datagram);
+        if (federateIds.isEmpty()) {
             continue;
         }
         appendMessageRow(datagram, sender, senderPort, QStringLiteral("Test Rx"));
-        respondFromDummyFederate(datagram, sender, senderPort);
+        for (const EntityId &federateId : federateIds) {
+            respondFromDummyFederate(datagram, sender, senderPort, federateId);
+        }
     }
 }
 
-void MainWindow::respondFromDummyFederate(const QByteArray &datagram, const QHostAddress &sender, quint16 senderPort)
+void MainWindow::respondFromDummyFederate(const QByteArray &datagram,
+                                          const QHostAddress &sender,
+                                          quint16 senderPort,
+                                          const EntityId &federateId,
+                                          bool directToManager)
 {
     if (datagram.size() > PduTypeOffset) {
         const quint8 pduType = static_cast<quint8>(datagram[PduTypeOffset]);
@@ -1425,7 +1565,6 @@ void MainWindow::respondFromDummyFederate(const QByteArray &datagram, const QHos
 
     bool configOk = false;
     const auto config = currentConfig(&configOk);
-    const EntityId federateId = currentTestFederateId();
     if (configOk) {
         const QStringList warnings = dummyRequestWarnings(datagram, config, federateId);
         if (!warnings.isEmpty()) {
@@ -1476,7 +1615,8 @@ void MainWindow::respondFromDummyFederate(const QByteArray &datagram, const QHos
 
     const quint32 requestId = requestIdFromResponse(datagram, static_cast<quint8>(pduType));
     const EntityId receivingEntity = readEntityId(datagram, TargetEntityOffset);
-    if (!entityIdsMatch(receivingEntity, federateId)) {
+    if (!entityIdsMatch(receivingEntity, federateId)
+        && !isBroadcastEntityId(receivingEntity)) {
         appendLog(QStringLiteral("Dummy federate ignored %1 request %2 for entity %3; configured as %4")
                       .arg(pduTypeName(static_cast<quint8>(pduType)))
                       .arg(requestId)
@@ -1488,7 +1628,7 @@ void MainWindow::respondFromDummyFederate(const QByteArray &datagram, const QHos
 
     DisConfig responseConfig;
     responseConfig.exerciseId = static_cast<quint8>(datagram[PduExerciseIdOffset]);
-    responseConfig.managerId = receivingEntity;
+    responseConfig.managerId = federateId;
     responseConfig.targetId = readEntityId(datagram, OriginEntityOffset);
 
     const QByteArray response = pduType == ActionRequestPdu
@@ -1498,26 +1638,34 @@ void MainWindow::respondFromDummyFederate(const QByteArray &datagram, const QHos
         configOk && config.destinationAddress.isMulticast() ? config.destinationAddress : sender;
     const quint16 responsePort =
         configOk && config.destinationAddress.isMulticast() ? config.destinationPort : senderPort;
-    const auto written = dummyFederateSocket_->writeDatagram(response, responseAddress, responsePort);
-    if (written != response.size()) {
-        appendLog(QStringLiteral("Dummy federate failed to acknowledge request %1: %2")
-                      .arg(requestId)
-                      .arg(dummyFederateSocket_->errorString()),
-                  LogLevel::Error);
-        return;
+    if (!directToManager) {
+        const auto written = dummyFederateSocket_->writeDatagram(response, responseAddress, responsePort);
+        if (written != response.size()) {
+            appendLog(QStringLiteral("Dummy federate failed to acknowledge request %1: %2")
+                          .arg(requestId)
+                          .arg(dummyFederateSocket_->errorString()),
+                      LogLevel::Error);
+            return;
+        }
     }
 
-    appendLog(QStringLiteral("Dummy federate accepted %1 request %2 from %3:%4")
+    appendLog(QStringLiteral("Dummy federate %1 accepted %2 request %3 from %4:%5")
+                  .arg(entityIdString(federateId))
                   .arg(pduTypeName(static_cast<quint8>(pduType)))
                   .arg(requestId)
                   .arg(sender.toString())
                   .arg(senderPort));
-    appendLog(QStringLiteral("Dummy federate sent %1 response %2 to %3:%4")
+    appendLog(QStringLiteral("Dummy federate %1 sent %2 response %3 to %4:%5")
+                  .arg(entityIdString(federateId))
                   .arg(pduType == ActionRequestPdu ? QStringLiteral("Action") : QStringLiteral("Acknowledge"))
                   .arg(requestId)
                   .arg(responseAddress.toString())
                   .arg(responsePort));
+    updateTestFederateState(federateId, stateForAcceptedRequest(static_cast<quint8>(pduType), datagram));
     appendMessageRow(response, responseAddress, responsePort, QStringLiteral("Test Tx"));
+    if (directToManager) {
+        recordResponse(response, responseAddress, responsePort);
+    }
 }
 
 void MainWindow::appendMessageRow(const QByteArray &datagram,

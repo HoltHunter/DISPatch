@@ -81,10 +81,9 @@ instead of the current UTC time.
 
 ## Configuration
 
-At startup, DISPatch looks for `dispatch.json` in the current working directory
-and then next to the executable. It also accepts `dispatch_config.json` and the
-legacy `DISPatch_config.json` name for existing installs. You can pass an
-explicit path with `--config path/to/dispatch.json`.
+At startup, DISPatch looks for `dispatch.json` in your home directory, then
+`/etc/dispatch.json`, then the current working directory, and then next to the
+executable. You can pass an explicit path with `--config path/to/dispatch.json`.
 
 The config file supplies startup defaults for theme, network addresses and
 ports, DIS entity IDs, command settings, and frozen behavior. The theme can be
@@ -148,18 +147,18 @@ UDP port without address reuse enabled.
 
 ## Local Test Federate
 
-Set `testFederate.enabled` in `dispatch.json` to run an in-process UDP
-responder for local testing. When enabled, the UI shows a Test Federate status
-line with the bind state and editable site/application/entity controls. The
-entity ID comes from `testFederate.entityId`. It listens on the configured
-destination address and port, accepts DIS6 Simulation Management
-state-transition requests addressed to that entity ID, and sends accepted
-responses back to the manager:
+Set `testFederate.enabled` in `dispatch.json` to run in-process UDP responders
+for local testing. When enabled, the UI shows a Test Federates status line with
+the bind state and editable site/application/entity controls for the first
+configured federate. The entity IDs come from `testFederate.entityIds`. The
+responders listen on the configured destination address and port, accept DIS6
+Simulation Management state-transition requests addressed to one of those IDs
+or to the broadcast entity ID, and send accepted responses back to the manager:
 
 - `Initialize`: Action Response PDU
 - `Start`, `Pause`, `Stop`, and `Reset`: Acknowledge PDU
 
-When both the test federate and heartbeat tracking are enabled, the test
+When both test federates and heartbeat tracking are enabled, each configured
 federate periodically sends an empty Comment PDU addressed to the manager.
 Select `Dead (stop heartbeat)` in the Test Federate box to stop those messages
 and exercise the configured timeout; clear it to resume heartbeats.

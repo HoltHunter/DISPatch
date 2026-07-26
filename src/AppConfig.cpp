@@ -6,6 +6,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonValue>
@@ -99,7 +100,7 @@ auto stopFreezeConfigKeys() -> const QStringList &
 auto testFederateConfigKeys() -> const QStringList &
 {
     static const QStringList keys{QStringLiteral("enabled"),
-                                  QStringLiteral("entityId")};
+                                  QStringLiteral("entityIds")};
     return keys;
 }
 
@@ -314,12 +315,12 @@ auto readEntityIdConfig(const QJsonObject &object,
                         QStringList *warnings,
                         const QString &path) -> EntityId
 {
-    const QJsonObject entity = readObject(object, key, warnings, path);
+    const QJsonObject entity = key.isEmpty() ? object : readObject(object, key, warnings, path);
     if (entity.isEmpty()) {
         return fallback;
     }
 
-    const QString entityPath = QStringLiteral("%1.%2").arg(path, key);
+    const QString entityPath = key.isEmpty() ? path : QStringLiteral("%1.%2").arg(path, key);
     warnUnknownKeys(entity, entityIdConfigKeys(), warnings, entityPath);
     return EntityId{static_cast<quint16>(readInt(entity, QStringLiteral("site"), fallback.site, 0, BroadcastEntityIdValue, warnings, entityPath)),
                     static_cast<quint16>(readInt(entity,
@@ -336,6 +337,46 @@ auto readEntityIdConfig(const QJsonObject &object,
                                                  BroadcastEntityIdValue,
                                                  warnings,
                                                  entityPath))};
+}
+
+auto readEntityIdListConfig(const QJsonObject &object,
+                            const QString &key,
+                            const QList<EntityId> &fallback,
+                            QStringList *warnings,
+                            const QString &path) -> QList<EntityId>
+{
+    if (!object.contains(key)) {
+        return fallback;
+    }
+
+    const QJsonValue value = object.value(key);
+    if (!value.isArray()) {
+        warnings->append(QStringLiteral("%1.%2 must be an array of entity ID objects; using defaults")
+                             .arg(path, key));
+        return fallback;
+    }
+
+    QList<EntityId> ids;
+    const QJsonArray array = value.toArray();
+    for (int index = 0; index < array.size(); ++index) {
+        const QJsonValue item = array.at(index);
+        const QString itemPath = QStringLiteral("%1.%2[%3]").arg(path, key).arg(index);
+        if (!item.isObject()) {
+            warnings->append(QStringLiteral("%1 must be an entity ID object; ignoring it")
+                                 .arg(itemPath));
+            continue;
+        }
+
+        ids.append(readEntityIdConfig(item.toObject(), QString(), EntityId{}, warnings, itemPath));
+    }
+
+    if (ids.isEmpty()) {
+        warnings->append(QStringLiteral("%1.%2 does not contain any valid entity IDs; using defaults")
+                             .arg(path, key));
+        return fallback;
+    }
+
+    return ids;
 }
 
 auto readReason(const QJsonObject &object,
@@ -383,14 +424,10 @@ auto configSearchPaths() -> QStringList
     }
 
     const QString fileName = QStringLiteral("dispatch.json");
-    const QString legacyLowerFileName = QStringLiteral("dispatch_config.json");
-    const QString legacyMixedFileName = QStringLiteral("DISPatch_config.json");
-    return {QDir::current().filePath(fileName),
-            QDir(QCoreApplication::applicationDirPath()).filePath(fileName),
-            QDir::current().filePath(legacyLowerFileName),
-            QDir(QCoreApplication::applicationDirPath()).filePath(legacyLowerFileName),
-            QDir::current().filePath(legacyMixedFileName),
-            QDir(QCoreApplication::applicationDirPath()).filePath(legacyMixedFileName)};
+    return {QDir::home().filePath(fileName),
+            QStringLiteral("/etc/%1").arg(fileName),
+            QDir::current().filePath(fileName),
+            QDir(QCoreApplication::applicationDirPath()).filePath(fileName)};
 }
 
 void validateNetworkConfig(const AppConfig &config, QStringList *warnings) // NOLINT(readability-function-cognitive-complexity)
@@ -762,11 +799,11 @@ auto loadAppConfig(const QString &path, QStringList *warnings) -> AppConfig
                                           config.testFederateEnabled,
                                           warnings,
                                           QStringLiteral("config.testFederate"));
-    config.testFederateId = readEntityIdConfig(testFederate,
-                                               QStringLiteral("entityId"),
-                                               config.testFederateId,
-                                               warnings,
-                                               QStringLiteral("config.testFederate"));
+    config.testFederateIds = readEntityIdListConfig(testFederate,
+                                                    QStringLiteral("entityIds"),
+                                                    config.testFederateIds,
+                                                    warnings,
+                                                    QStringLiteral("config.testFederate"));
     validateNetworkConfig(config, warnings);
 
     return config;
@@ -780,8 +817,7 @@ auto loadAppConfig(QStringList *warnings) -> AppConfig
         }
     }
 
-    warnings->append(QStringLiteral(
-        "No dispatch.json, dispatch_config.json, or DISPatch_config.json found; using built-in defaults"));
+    warnings->append(QStringLiteral("No dispatch.json found; using built-in defaults"));
     return {};
 }
 

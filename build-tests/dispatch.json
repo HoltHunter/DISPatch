@@ -14,7 +14,7 @@
     "multicastLoopback": false
   },
   "heartbeat": {
-    "enabled": false,
+    "enabled": true,
     "timeout": 5
   },
   "dis": {
@@ -25,9 +25,9 @@
       "entity": 1
     },
     "targetId": {
-      "site": 1,
-      "application": 1,
-      "entity": 0
+      "site": 65535,
+      "application": 65535,
+      "entity": 65535
     }
   },
   "commands": {
@@ -58,10 +58,27 @@
   },
   "testFederate": {
     "enabled": true,
-    "entityId": {
-      "site": 1,
-      "application": 1,
-      "entity": 0
-    }
+    "entityIds": [
+      {
+        "site": 1,
+        "application": 1,
+        "entity": 0
+      },
+      {
+        "site": 1,
+        "application": 1,
+        "entity": 2
+      },
+      {
+        "site": 1,
+        "application": 1,
+        "entity": 3
+      },
+      {
+        "site": 1,
+        "application": 1,
+        "entity": 4
+      }
+    ]
   }
 }
