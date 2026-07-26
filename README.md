@@ -89,6 +89,11 @@ current UTC time. Set `useLiteralZero` to `true` in the `start` block when a
 zero Start/Resume offset should be written as a literal zero clock-time value
 instead of the current UTC time.
 
+The `frozenBehavior` values in the `pause`, `stop`, and `reset` blocks are
+written directly into the Stop/Freeze PDU Frozen Behavior field. DISPatch does
+not interpret that byte locally; it tells receiving federates what behavior is
+requested while frozen, according to their DIS/interface-control-document rules.
+
 ## Configuration
 
 At startup, DISPatch first uses an explicit `--config path/to/dispatch.json` or
@@ -119,6 +124,25 @@ are mutually exclusive shortcuts that set the destination to the selected
 interface's IPv4 broadcast address or `127.0.0.1`, select an appropriate
 interface, and adjust UDP bind flags for the selected mode. In Broadcast mode,
 changing the interface immediately updates the displayed destination address.
+
+Network settings that are not exposed in the UI can be overridden from the
+command line after the config is loaded:
+
+```bash
+dispatch --config /usr/local/etc/dispatch.json \
+  --multicast-group 239.1.2.3 \
+  --no-join-multicast \
+  --multicast-loopback \
+  --share-address \
+  --reuse-address
+```
+
+The boolean forms are `--share-address`/`--no-share-address`,
+`--reuse-address`/`--no-reuse-address`,
+`--join-multicast`/`--no-join-multicast`, and
+`--multicast-loopback`/`--no-multicast-loopback`.
+`--multicast-group ADDRESS` and `--multicast-group-address ADDRESS` are
+equivalent.
 
 The optional `heartbeat` block enables liveness tracking:
 

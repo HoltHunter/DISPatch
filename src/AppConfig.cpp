@@ -28,6 +28,16 @@ struct CommandLineOptions {
     bool hasExplicitConfig = false;
     QString configPath;
     QString logDir;
+    bool hasMulticastGroupAddress = false;
+    QString multicastGroupAddress;
+    bool hasShareAddress = false;
+    bool shareAddress = false;
+    bool hasReuseAddress = false;
+    bool reuseAddress = false;
+    bool hasJoinMulticast = false;
+    bool joinMulticast = false;
+    bool hasMulticastLoopback = false;
+    bool multicastLoopback = false;
 };
 
 auto rootConfigKeys() -> const QStringList &
@@ -430,19 +440,39 @@ auto readReason(const QJsonObject &object,
     return static_cast<quint8>(readInt(object, key, fallback, 0, MaxUint8Value, warnings, path));
 }
 
-auto commandLineOptions(QStringList *warnings) -> CommandLineOptions
+auto readArgumentValue(const QStringList &arguments,
+                       int *index,
+                       QString *value,
+                       QStringList *warnings,
+                       const QString &optionName,
+                       const QString &description) -> bool
+{
+    if (*index + 1 < arguments.size()
+        && !arguments.at(*index + 1).startsWith(QStringLiteral("--"))) {
+        *value = arguments.at(++(*index));
+        return true;
+    }
+
+    if (warnings != nullptr) {
+        warnings->append(QStringLiteral("%1 requires %2; ignoring it")
+                             .arg(optionName, description));
+    }
+    return false;
+}
+
+auto commandLineOptions(const QStringList &arguments, QStringList *warnings) -> CommandLineOptions
 {
     CommandLineOptions options;
-    const QStringList arguments = QCoreApplication::arguments();
     for (int i = 1; i < arguments.size(); ++i) {
         const QString argument = arguments.at(i);
         if (argument == QStringLiteral("--config")) {
             options.hasExplicitConfig = true;
-            if (i + 1 < arguments.size()) {
-                options.configPath = arguments.at(++i);
-            } else if (warnings != nullptr) {
-                warnings->append(QStringLiteral("--config requires a path; using built-in defaults"));
-            }
+            readArgumentValue(arguments,
+                              &i,
+                              &options.configPath,
+                              warnings,
+                              argument,
+                              QStringLiteral("a path"));
         } else if (argument.startsWith(QStringLiteral("--config="))) {
             options.hasExplicitConfig = true;
             options.configPath = argument.mid(QStringLiteral("--config=").size());
@@ -450,16 +480,64 @@ auto commandLineOptions(QStringList *warnings) -> CommandLineOptions
                 warnings->append(QStringLiteral("--config requires a path; using built-in defaults"));
             }
         } else if (argument == QStringLiteral("--log-dir")) {
-            if (i + 1 < arguments.size()) {
-                options.logDir = arguments.at(++i);
-            } else if (warnings != nullptr) {
-                warnings->append(QStringLiteral("--log-dir requires a directory; using current working directory for relative log files"));
-            }
+            readArgumentValue(arguments,
+                              &i,
+                              &options.logDir,
+                              warnings,
+                              argument,
+                              QStringLiteral("a directory"));
         } else if (argument.startsWith(QStringLiteral("--log-dir="))) {
             options.logDir = argument.mid(QStringLiteral("--log-dir=").size());
             if (options.logDir.isEmpty() && warnings != nullptr) {
                 warnings->append(QStringLiteral("--log-dir requires a directory; using current working directory for relative log files"));
             }
+        } else if (argument == QStringLiteral("--multicast-group")
+                   || argument == QStringLiteral("--multicast-group-address")) {
+            options.hasMulticastGroupAddress =
+                readArgumentValue(arguments,
+                                  &i,
+                                  &options.multicastGroupAddress,
+                                  warnings,
+                                  argument,
+                                  QStringLiteral("an IP address"));
+        } else if (argument.startsWith(QStringLiteral("--multicast-group="))) {
+            options.multicastGroupAddress = argument.mid(QStringLiteral("--multicast-group=").size());
+            if (options.multicastGroupAddress.isEmpty() && warnings != nullptr) {
+                warnings->append(QStringLiteral("--multicast-group requires an IP address; ignoring it"));
+            } else {
+                options.hasMulticastGroupAddress = true;
+            }
+        } else if (argument.startsWith(QStringLiteral("--multicast-group-address="))) {
+            options.multicastGroupAddress = argument.mid(QStringLiteral("--multicast-group-address=").size());
+            if (options.multicastGroupAddress.isEmpty() && warnings != nullptr) {
+                warnings->append(QStringLiteral("--multicast-group-address requires an IP address; ignoring it"));
+            } else {
+                options.hasMulticastGroupAddress = true;
+            }
+        } else if (argument == QStringLiteral("--share-address")) {
+            options.hasShareAddress = true;
+            options.shareAddress = true;
+        } else if (argument == QStringLiteral("--no-share-address")) {
+            options.hasShareAddress = true;
+            options.shareAddress = false;
+        } else if (argument == QStringLiteral("--reuse-address")) {
+            options.hasReuseAddress = true;
+            options.reuseAddress = true;
+        } else if (argument == QStringLiteral("--no-reuse-address")) {
+            options.hasReuseAddress = true;
+            options.reuseAddress = false;
+        } else if (argument == QStringLiteral("--join-multicast")) {
+            options.hasJoinMulticast = true;
+            options.joinMulticast = true;
+        } else if (argument == QStringLiteral("--no-join-multicast")) {
+            options.hasJoinMulticast = true;
+            options.joinMulticast = false;
+        } else if (argument == QStringLiteral("--multicast-loopback")) {
+            options.hasMulticastLoopback = true;
+            options.multicastLoopback = true;
+        } else if (argument == QStringLiteral("--no-multicast-loopback")) {
+            options.hasMulticastLoopback = true;
+            options.multicastLoopback = false;
         }
     }
 
@@ -481,6 +559,21 @@ auto configSearchPaths() -> QStringList
 auto withCommandLineOptions(AppConfig config, const CommandLineOptions &options) -> AppConfig
 {
     config.logDir = options.logDir;
+    if (options.hasMulticastGroupAddress) {
+        config.multicastGroupAddress = options.multicastGroupAddress;
+    }
+    if (options.hasShareAddress) {
+        config.shareAddress = options.shareAddress;
+    }
+    if (options.hasReuseAddress) {
+        config.reuseAddress = options.reuseAddress;
+    }
+    if (options.hasJoinMulticast) {
+        config.joinMulticast = options.joinMulticast;
+    }
+    if (options.hasMulticastLoopback) {
+        config.multicastLoopback = options.multicastLoopback;
+    }
     return config;
 }
 
@@ -611,7 +704,7 @@ auto isBroadcastAddress(const QHostAddress &address) -> bool
         || address.toString() == QString::fromLatin1(BroadcastDestinationAddress);
 }
 
-auto loadAppConfig(const QString &path, QStringList *warnings) -> AppConfig
+auto loadAppConfigFile(const QString &path, QStringList *warnings, bool validateNetwork) -> AppConfig
 {
     AppConfig config;
     QFile file(path);
@@ -858,29 +951,50 @@ auto loadAppConfig(const QString &path, QStringList *warnings) -> AppConfig
                                                     config.testFederateIds,
                                                     warnings,
                                                     QStringLiteral("config.testFederate"));
-    validateNetworkConfig(config, warnings);
+    if (validateNetwork) {
+        validateNetworkConfig(config, warnings);
+    }
 
+    return config;
+}
+
+auto loadAppConfig(const QString &path, QStringList *warnings) -> AppConfig
+{
+    return loadAppConfigFile(path, warnings, true);
+}
+
+auto loadAppConfig(const QStringList &arguments, QStringList *warnings) -> AppConfig
+{
+    const CommandLineOptions options = commandLineOptions(arguments, warnings);
+    AppConfig config;
+    if (options.hasExplicitConfig) {
+        if (options.configPath.isEmpty()) {
+            config = AppConfig{};
+        } else {
+            config = loadAppConfigFile(options.configPath, warnings, false);
+        }
+    } else {
+        bool loaded = false;
+        for (const QString &path : configSearchPaths()) {
+            if (QFile::exists(path)) {
+                config = loadAppConfigFile(path, warnings, false);
+                loaded = true;
+                break;
+            }
+        }
+        if (!loaded) {
+            warnings->append(QStringLiteral("No dispatch.json found; using built-in defaults"));
+        }
+    }
+
+    config = withCommandLineOptions(config, options);
+    validateNetworkConfig(config, warnings);
     return config;
 }
 
 auto loadAppConfig(QStringList *warnings) -> AppConfig
 {
-    const CommandLineOptions options = commandLineOptions(warnings);
-    if (options.hasExplicitConfig) {
-        if (options.configPath.isEmpty()) {
-            return withCommandLineOptions(AppConfig{}, options);
-        }
-        return withCommandLineOptions(loadAppConfig(options.configPath, warnings), options);
-    }
-
-    for (const QString &path : configSearchPaths()) {
-        if (QFile::exists(path)) {
-            return withCommandLineOptions(loadAppConfig(path, warnings), options);
-        }
-    }
-
-    warnings->append(QStringLiteral("No dispatch.json found; using built-in defaults"));
-    return withCommandLineOptions(AppConfig{}, options);
+    return loadAppConfig(QCoreApplication::arguments(), warnings);
 }
 
 } // namespace dispatch

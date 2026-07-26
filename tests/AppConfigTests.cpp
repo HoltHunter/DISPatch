@@ -219,6 +219,56 @@ TEST_CASE("Config rejects oversized integer values")
     CHECK(warnings.join(QLatin1Char('\n')).contains(QStringLiteral("config.network.destinationPort")));
 }
 
+TEST_CASE("Command line config path takes precedence and network flags override config")
+{
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const QString selectedPath = writeConfig(directory, R"json({
+  "network": {
+    "destinationAddress": "192.0.2.1",
+    "destinationPort": 3001,
+    "listenPort": 3000,
+    "multicastGroupAddress": "239.9.9.9",
+    "shareAddress": true,
+    "reuseAddress": false,
+    "joinMulticast": true,
+    "multicastLoopback": false
+  }
+})json");
+    const QString ignoredPath = directory.filePath(QStringLiteral("ignored.json"));
+    QFile ignoredFile(ignoredPath);
+    REQUIRE(ignoredFile.open(QIODevice::WriteOnly));
+    REQUIRE(ignoredFile.write(R"json({
+  "network": {
+    "destinationAddress": "198.51.100.9"
+    }
+})json") > 0);
+    ignoredFile.close();
+
+    QStringList warnings;
+    const AppConfig config = loadAppConfig(QStringList{QStringLiteral("dispatch"),
+                                                       QStringLiteral("--config"),
+                                                       selectedPath,
+                                                       QStringLiteral("--config=%1").arg(ignoredPath),
+                                                       QStringLiteral("--multicast-group"),
+                                                       QStringLiteral("239.2.3.4"),
+                                                       QStringLiteral("--no-share-address"),
+                                                       QStringLiteral("--reuse-address"),
+                                                       QStringLiteral("--no-join-multicast"),
+                                                       QStringLiteral("--multicast-loopback"),
+                                                       QStringLiteral("--log-dir=%1").arg(directory.path())},
+                                           &warnings);
+
+    CHECK(config.configPath == ignoredPath);
+    CHECK(config.destinationAddress == QStringLiteral("198.51.100.9"));
+    CHECK(config.multicastGroupAddress == QStringLiteral("239.2.3.4"));
+    CHECK_FALSE(config.shareAddress);
+    CHECK(config.reuseAddress);
+    CHECK_FALSE(config.joinMulticast);
+    CHECK(config.multicastLoopback);
+    CHECK(config.logDir == directory.path());
+}
+
 TEST_CASE("Config accepts stop/freeze reason labels")
 {
     CHECK(stopFreezeReasonLabel(RecessReason) == QStringLiteral("Recess"));

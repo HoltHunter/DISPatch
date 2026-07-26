@@ -58,6 +58,7 @@ auto parseConfigAddress(const QString &text, QHostAddress *address) -> bool;
 auto isAnyAddress(const QHostAddress &address) -> bool;
 auto isBroadcastAddress(const QHostAddress &address) -> bool;
 auto loadAppConfig(const QString &path, QStringList *warnings) -> AppConfig;
+auto loadAppConfig(const QStringList &arguments, QStringList *warnings) -> AppConfig;
 auto loadAppConfig(QStringList *warnings) -> AppConfig;
 
 } // namespace dispatch

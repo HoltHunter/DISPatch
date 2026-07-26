@@ -51,10 +51,10 @@
   },
   "log": {
     "logs": true,
-    "logFile": "DISPatch.log",
+    "logFile": "dispatch.log",
     "logLevel": "debug",
     "messageLogs": true,
-    "messageLogFile": "DISPatch_messages.log"
+    "messageLogFile": "dispatch_messages.log"
   },
   "testFederate": {
     "enabled": true,
