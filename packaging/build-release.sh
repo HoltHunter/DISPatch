@@ -43,14 +43,14 @@ conan build "${root_dir}" \
     --settings compiler.cppstd=gnu17 \
     --options tests=False
 
-binary_path="$(find "${root_dir}/build" -type f -name DISPatch -executable | head -n 1)"
+binary_path="$(find "${root_dir}/build" -type f -name dispatch -executable | head -n 1)"
 if [[ -z "${binary_path}" ]]; then
-    echo "Could not find built DISPatch executable under ${root_dir}/build" >&2
+    echo "Could not find built dispatch executable under ${root_dir}/build" >&2
     exit 1
 fi
 
-cp -a "${binary_path}" "${stage_dir}/bin/DISPatch"
-cp -a "${root_dir}/etc/DISPatch_config.json" "${stage_dir}/bin/DISPatch_config.json"
+cp -a "${binary_path}" "${stage_dir}/bin/dispatch"
+cp -a "${root_dir}/etc/dispatch.json" "${stage_dir}/bin/dispatch.json"
 
 while IFS= read -r library_path; do
     cp -Lf "${library_path}" "${stage_dir}/lib/$(basename "${library_path}")"
@@ -90,7 +90,7 @@ set -euo pipefail
 app_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export LD_LIBRARY_PATH="${app_root}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 export QT_PLUGIN_PATH="${app_root}/plugins"
-exec "${app_root}/bin/DISPatch" "$@"
+exec "${app_root}/bin/dispatch" "$@"
 EOF
 chmod +x "${stage_dir}/run-dispatch"
 
@@ -102,10 +102,10 @@ chmod +x "${stage_dir}/run-dispatch"
     echo "  ./run-dispatch"
     echo
     echo "Dynamic dependency report:"
-    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" ldd "${stage_dir}/bin/DISPatch" || true
+    LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" ldd "${stage_dir}/bin/dispatch" || true
 } > "${stage_dir}/README.release.txt"
 
-missing="$(find "${stage_dir}" -type f \( -name "DISPatch" -o -name "*.so" -o -name "*.so.*" \) \
+missing="$(find "${stage_dir}" -type f \( -name "dispatch" -o -name "*.so" -o -name "*.so.*" \) \
     -exec env LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" ldd {} \; 2>/dev/null | awk '/not found/ {print}' | sort -u)"
 if [[ -n "${missing}" ]]; then
     {

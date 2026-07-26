@@ -12,7 +12,7 @@ namespace {
 
 auto writeConfig(QTemporaryDir &directory, const QByteArray &json) -> QString
 {
-    const QString path = directory.filePath(QStringLiteral("DISPatch_config.json"));
+    const QString path = directory.filePath(QStringLiteral("dispatch.json"));
     QFile file(path);
     REQUIRE(file.open(QIODevice::WriteOnly));
     REQUIRE(file.write(json) == json.size());
@@ -107,6 +107,19 @@ TEST_CASE("Config accepts exercise ID zero")
 
     CHECK(warnings.isEmpty());
     CHECK(config.exerciseId == 0);
+}
+
+TEST_CASE("Config defaults multicast loopback off")
+{
+    QTemporaryDir directory;
+    REQUIRE(directory.isValid());
+    const QString path = writeConfig(directory, R"json({})json");
+
+    QStringList warnings;
+    const AppConfig config = loadAppConfig(path, &warnings);
+
+    CHECK(warnings.isEmpty());
+    CHECK_FALSE(config.multicastLoopback);
 }
 
 TEST_CASE("Config loads heartbeat settings")

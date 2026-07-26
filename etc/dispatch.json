@@ -11,10 +11,10 @@
     "shareAddress": true,
     "reuseAddress": true,
     "joinMulticast": true,
-    "multicastLoopback": true
+    "multicastLoopback": false
   },
   "heartbeat": {
-    "enabled": true,
+    "enabled": false,
     "timeout": 5
   },
   "dis": {

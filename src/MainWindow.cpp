@@ -1406,6 +1406,9 @@ void MainWindow::readDummyFederateDatagrams()
                 continue;
             }
         }
+        if (!isSimulationRequestForEntity(datagram, currentTestFederateId())) {
+            continue;
+        }
         appendMessageRow(datagram, sender, senderPort, QStringLiteral("Test Rx"));
         respondFromDummyFederate(datagram, sender, senderPort);
     }
@@ -1563,30 +1566,34 @@ void MainWindow::recordResponse(const QByteArray &datagram, const QHostAddress &
         return;
     }
 
-    appendMessageRow(datagram, sender, senderPort, QStringLiteral("Rx"));
+    if (!isResponsePduType(pduType)) {
+        return;
+    }
+
     const quint32 requestId = requestIdFromResponse(datagram, pduType);
+    if (!requestStates_.contains(requestId)) {
+        return;
+    }
+
     bool configOk = false;
     const auto config = currentConfig(&configOk);
     if (configOk) {
         const QStringList warnings =
-            incomingResponseWarnings(datagram, config, currentTargetId(), requestStates_.contains(requestId));
+            incomingResponseWarnings(datagram, config, currentTargetId(), true);
         if (!warnings.isEmpty()) {
-            appendLog(QStringLiteral("Received suspicious datagram from %1 (%2 bytes): %3")
+            appendLog(QStringLiteral("Dropped expected response candidate from %1 (%2 bytes): %3")
                           .arg(peerString(sender, senderPort))
                           .arg(datagram.size())
                           .arg(warnings.join(QStringLiteral("; "))),
                       LogLevel::Warn);
+            return;
         }
     }
 
-    QString matchedState;
-    if (requestStates_.contains(requestId)) {
-        matchedState = QStringLiteral(" for %1").arg(requestStates_.value(requestId));
-    }
-
-    appendLog(QStringLiteral("Received %1%2 from %3:%4")
+    appendMessageRow(datagram, sender, senderPort, QStringLiteral("Rx"));
+    appendLog(QStringLiteral("Received %1 for %2 from %3:%4")
                   .arg(pduTypeName(pduType))
-                  .arg(matchedState)
+                  .arg(requestStates_.value(requestId))
                   .arg(sender.toString())
                   .arg(senderPort));
 }

@@ -29,8 +29,9 @@ add_executable(DISPatch
         resources/DISPatch.qrc)
 target_include_directories(DISPatch PRIVATE include)
 target_link_libraries(DISPatch PRIVATE DISPatch_core Qt5::Widgets)
+set_target_properties(DISPatch PROPERTIES OUTPUT_NAME dispatch)
 
-configure_file(etc/DISPatch_config.json DISPatch_config.json COPYONLY)
+configure_file(etc/dispatch.json dispatch.json COPYONLY)
 
 if(DISPATCH_WITH_TESTS)
     find_package(Catch2 REQUIRED)

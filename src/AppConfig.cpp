@@ -382,9 +382,15 @@ auto configSearchPaths() -> QStringList
         }
     }
 
-    const QString fileName = QStringLiteral("DISPatch_config.json");
+    const QString fileName = QStringLiteral("dispatch.json");
+    const QString legacyLowerFileName = QStringLiteral("dispatch_config.json");
+    const QString legacyMixedFileName = QStringLiteral("DISPatch_config.json");
     return {QDir::current().filePath(fileName),
-            QDir(QCoreApplication::applicationDirPath()).filePath(fileName)};
+            QDir(QCoreApplication::applicationDirPath()).filePath(fileName),
+            QDir::current().filePath(legacyLowerFileName),
+            QDir(QCoreApplication::applicationDirPath()).filePath(legacyLowerFileName),
+            QDir::current().filePath(legacyMixedFileName),
+            QDir(QCoreApplication::applicationDirPath()).filePath(legacyMixedFileName)};
 }
 
 void validateNetworkConfig(const AppConfig &config, QStringList *warnings) // NOLINT(readability-function-cognitive-complexity)
@@ -474,12 +480,6 @@ void validateNetworkConfig(const AppConfig &config, QStringList *warnings) // NO
         && (destinationIsMulticast || config.destinationPort == config.listenPort)) {
         warnings->append(QStringLiteral(
             "config.network.shareAddress and reuseAddress should usually both be true when multiple DIS apps share one UDP port"));
-    }
-
-    if (!config.multicastLoopback && destinationIsMulticast
-        && config.destinationPort == config.listenPort) {
-        warnings->append(QStringLiteral(
-            "config.network.multicastLoopback is false; local same-machine multicast testing may not see looped-back traffic"));
     }
 
     if (config.testFederateEnabled && config.destinationPort == config.listenPort
@@ -780,7 +780,8 @@ auto loadAppConfig(QStringList *warnings) -> AppConfig
         }
     }
 
-    warnings->append(QStringLiteral("No DISPatch_config.json found; using built-in defaults"));
+    warnings->append(QStringLiteral(
+        "No dispatch.json, dispatch_config.json, or DISPatch_config.json found; using built-in defaults"));
     return {};
 }
 

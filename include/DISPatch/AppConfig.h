@@ -28,7 +28,7 @@ struct AppConfig {
     bool shareAddress = true;
     bool reuseAddress = true;
     bool joinMulticast = true;
-    bool multicastLoopback = true;
+    bool multicastLoopback = false;
     bool heartbeatEnabled = false;
     int heartbeatTimeoutSeconds = DefaultHeartbeatTimeoutSeconds;
     quint8 exerciseId = 1;
