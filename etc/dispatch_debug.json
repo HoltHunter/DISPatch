@@ -1,7 +1,7 @@
 {
   "theme": "dark",
   "network": {
-    "destinationAddress": "239.1.2.3",
+    "destinationAddress": "255.255.255.255",
     "destinationPort": 3000,
     "listenAddress": "0.0.0.0",
     "listenPort": 3000,
@@ -10,7 +10,7 @@
     "multicastInterfaceName": "",
     "shareAddress": true,
     "reuseAddress": true,
-    "joinMulticast": true,
+    "joinMulticast": false,
     "multicastLoopback": true
   },
   "heartbeat": {

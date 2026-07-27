@@ -19,7 +19,7 @@ enum class LogLevel : quint8 {
 };
 
 struct AppConfig {
-    QString destinationAddress = QStringLiteral("239.1.2.3");
+    QString destinationAddress = QStringLiteral("255.255.255.255");
     quint16 destinationPort = 3000;
     QString listenAddress = QStringLiteral("0.0.0.0");
     quint16 listenPort = 3000;
@@ -28,7 +28,7 @@ struct AppConfig {
     QString multicastInterfaceName;
     bool shareAddress = true;
     bool reuseAddress = true;
-    bool joinMulticast = true;
+    bool joinMulticast = false;
     bool multicastLoopback = false;
     bool heartbeatEnabled = false;
     int heartbeatTimeoutSeconds = DefaultHeartbeatTimeoutSeconds;

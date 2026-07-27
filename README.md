@@ -111,6 +111,9 @@ The network section also controls UDP socket behavior. `shareAddress` and
 machine when the platform supports it. `interfaceName` can pin socket binding
 and multicast sends/joins to a specific network interface; when it is blank,
 DISPatch selects a usable IPv4 interface and shows that selection in the UI.
+The default destination is broadcast mode, so DISPatch sends to the selected
+interface's IPv4 broadcast address unless the config or command line overrides
+the destination.
 `multicastInterfaceName` is still accepted as a legacy alias for
 `interfaceName`. `joinMulticast` makes the receive socket join the configured
 `multicastGroupAddress`; when that field is blank, DISPatch uses
