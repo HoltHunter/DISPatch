@@ -14,6 +14,9 @@
 #include <QtCore/QVariantAnimation>
 #include <QtGui/QColor>
 #include <QtGui/QFont>
+#include <QtGui/QPainter>
+#include <QtGui/QPainterPath>
+#include <QtGui/QPixmap>
 #include <QtGui/QTextCharFormat>
 #include <QtGui/QTextCursor>
 #include <QtNetwork/QNetworkAddressEntry>
@@ -38,9 +41,114 @@
 #include <QtWidgets/QTableWidget>
 #include <QtWidgets/QVBoxLayout>
 
+#include <cmath>
+
 namespace dispatch {
 
 namespace {
+
+auto deadHeartbeatPixmap() -> QPixmap
+{
+    QPixmap pixmap(HeartbeatIconExtent, HeartbeatIconExtent);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.translate(20.0, 20.0);
+    painter.scale(0.80, 0.80);
+    painter.translate(-20.0, -20.0);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(138, 143, 152));
+
+    const QColor iconColor(138, 143, 152);
+    auto drawBone = [&painter, &iconColor](const QPointF &start, const QPointF &end) -> void {
+        const double dx = end.x() - start.x();
+        const double dy = end.y() - start.y();
+        const double length = std::sqrt(dx * dx + dy * dy);
+        const double perpendicularX = -dy / length;
+        const double perpendicularY = dx / length;
+        constexpr double capOffset = 3.4;
+        constexpr double capDiameter = 7.0;
+
+        auto capCenter = [perpendicularX, perpendicularY](const QPointF &point, double offset) -> QPointF {
+            return QPointF(point.x() + perpendicularX * offset,
+                           point.y() + perpendicularY * offset);
+        };
+        auto drawCap = [&painter](const QPointF &center) -> void {
+            constexpr double radius = capDiameter / 2.0;
+            painter.drawEllipse(QRectF(center.x() - radius,
+                                       center.y() - radius,
+                                       capDiameter,
+                                       capDiameter));
+        };
+
+        painter.setBrush(iconColor);
+        painter.setPen(QPen(iconColor, 4.6, Qt::SolidLine, Qt::RoundCap));
+        painter.drawLine(start, end);
+        painter.setPen(Qt::NoPen);
+        drawCap(capCenter(start, -capOffset));
+        drawCap(capCenter(start, capOffset));
+        drawCap(capCenter(end, -capOffset));
+        drawCap(capCenter(end, capOffset));
+    };
+
+    drawBone(QPointF(7.3, 9.1), QPointF(32.7, 31.9));
+    drawBone(QPointF(32.7, 9.1), QPointF(7.3, 31.9));
+
+    QPainterPath skull;
+    skull.moveTo(20.0, 8.0);
+    skull.cubicTo(12.0, 8.0, 8.4, 13.2, 8.4, 20.4);
+    skull.cubicTo(8.4, 21.8, 8.8, 23.2, 9.3, 24.3);
+    skull.cubicTo(8.3, 25.1, 8.1, 27.0, 9.0, 28.4);
+    skull.cubicTo(9.8, 29.9, 11.2, 30.5, 12.9, 30.3);
+    skull.cubicTo(14.1, 30.2, 14.7, 30.8, 14.8, 32.1);
+    skull.cubicTo(15.0, 34.3, 15.8, 35.4, 17.4, 35.4);
+    skull.lineTo(22.6, 35.4);
+    skull.cubicTo(24.2, 35.4, 25.0, 34.3, 25.2, 32.1);
+    skull.cubicTo(25.3, 30.8, 25.9, 30.2, 27.1, 30.3);
+    skull.cubicTo(28.8, 30.5, 30.2, 29.9, 31.0, 28.4);
+    skull.cubicTo(31.9, 27.0, 31.7, 25.1, 30.7, 24.3);
+    skull.cubicTo(31.2, 23.2, 31.6, 21.8, 31.6, 20.4);
+    skull.cubicTo(31.6, 13.2, 28.0, 8.0, 20.0, 8.0);
+    skull.closeSubpath();
+    painter.drawPath(skull);
+
+    painter.setCompositionMode(QPainter::CompositionMode_Clear);
+    painter.setBrush(Qt::transparent);
+
+    QPainterPath leftEye;
+    leftEye.moveTo(15.1, 17.9);
+    leftEye.cubicTo(17.5, 17.9, 18.8, 19.5, 18.4, 21.7);
+    leftEye.cubicTo(18.0, 23.8, 16.3, 24.8, 14.2, 24.3);
+    leftEye.cubicTo(12.2, 23.9, 11.3, 22.4, 11.8, 20.4);
+    leftEye.cubicTo(12.2, 18.7, 13.3, 17.9, 15.1, 17.9);
+    leftEye.closeSubpath();
+    painter.drawPath(leftEye);
+
+    QPainterPath rightEye;
+    rightEye.moveTo(24.9, 17.9);
+    rightEye.cubicTo(22.5, 17.9, 21.2, 19.5, 21.6, 21.7);
+    rightEye.cubicTo(22.0, 23.8, 23.7, 24.8, 25.8, 24.3);
+    rightEye.cubicTo(27.8, 23.9, 28.7, 22.4, 28.2, 20.4);
+    rightEye.cubicTo(27.8, 18.7, 26.7, 17.9, 24.9, 17.9);
+    rightEye.closeSubpath();
+    painter.drawPath(rightEye);
+
+    QPainterPath nose;
+    nose.moveTo(20.0, 25.2);
+    nose.lineTo(17.9, 29.3);
+    nose.cubicTo(18.7, 29.9, 19.5, 29.4, 20.0, 28.8);
+    nose.cubicTo(20.5, 29.4, 21.3, 29.9, 22.1, 29.3);
+    nose.closeSubpath();
+    painter.drawPath(nose);
+
+    painter.setPen(QPen(Qt::transparent, 1.6, Qt::SolidLine, Qt::RoundCap));
+    painter.drawLine(QPointF(16.8, 31.5), QPointF(16.8, 35.4));
+    painter.drawLine(QPointF(20.0, 31.3), QPointF(20.0, 35.5));
+    painter.drawLine(QPointF(23.2, 31.5), QPointF(23.2, 35.4));
+
+    return pixmap;
+}
 
 auto peerString(const QHostAddress &address, quint16 port) -> QString
 {
@@ -1079,6 +1187,7 @@ void MainWindow::updateHeartbeat(const EntityId &entityId)
 
     status->lastUpdateMilliseconds = QDateTime::currentMSecsSinceEpoch();
     status->alive = true;
+    status->iconLabel->clear();
     status->iconLabel->setText(QStringLiteral("\u2665"));
     status->idLabel->setStyleSheet(
         QStringLiteral("QLabel { font-size: 12pt; font-weight: 600; }"));
@@ -1101,9 +1210,10 @@ void MainWindow::checkHeartbeatTimeouts()
 
         status->alive = false;
         status->pulseAnimation->stop();
-        status->iconLabel->setText(QStringLiteral("\u2620"));
+        status->iconLabel->clear();
+        status->iconLabel->setPixmap(deadHeartbeatPixmap());
         status->iconLabel->setStyleSheet(
-            QStringLiteral("QLabel { color: #8a8f98; font-size: 20pt; font-weight: 700; }"));
+            QStringLiteral("QLabel { color: #8a8f98; }"));
         status->idLabel->setStyleSheet(
             QStringLiteral("QLabel { color: #8a8f98; font-size: 12pt; font-weight: 600; }"));
     }

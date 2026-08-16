@@ -1,16 +1,17 @@
 # DISPatch
 
-DISPatch is a small Qt5/C++ DIS6 Simulation Management controller. It sends
+DISPatch is a small Qt/C++ DIS6 Simulation Management controller. It sends
 state-transition commands over UDP and displays received component responses.
 The UI defaults to a dark theme and includes dark, light, Gruvbox, One Dark,
 VS Code default, Tokyo Night, and Dracula themes.
 
 ## Build Dependencies
 
-On RHEL 8 or newer, install the Qt5 development package and CMake toolchain:
+Install the Qt development package and CMake toolchain. DISPatch defaults to
+Qt6 when both Qt5 and Qt6 are available:
 
 ```bash
-sudo dnf install cmake gcc-c++ qt5-qtbase-devel
+sudo dnf install cmake gcc-c++ qt6-qtbase-devel
 ```
 
 Then build:
@@ -18,6 +19,14 @@ Then build:
 ```bash
 cmake -S . -B build
 cmake --build build
+```
+
+To build against Qt5 for backward compatibility, set `DISPATCH_QT_MAJOR=5`:
+
+```bash
+sudo dnf install cmake gcc-c++ qt5-qtbase-devel
+cmake -S . -B build-qt5 -DDISPATCH_QT_MAJOR=5
+cmake --build build-qt5
 ```
 
 Install with the default CMake prefix:
@@ -38,34 +47,12 @@ cmake --build build-tests
 ctest --test-dir build-tests
 ```
 
-CLion can import the included `CMakePresets.json`. Select the `tests` preset
-to configure with `DISPATCH_WITH_TESTS=ON`; CLion will discover the CTest
-tests, and the `check` build preset/target builds and runs them with failure
-output enabled.
-
-The project also includes a Conan 2 recipe. The `tests` option controls the
-same CMake variable:
-
-```bash
-conan build . -o tests=True
-```
-
-## Release Tarball
-
-Build a RHEL 8 compatible release tarball with Docker or Podman:
-
-```bash
-docker build -f Dockerfile.release --output type=local,dest=dist .
-```
-
-The Dockerfile defaults to Rocky Linux 8.10 because the public UBI 8 repos do
-not include all Qt build dependencies without extra Red Hat entitlements. To
-build from a subscribed RHEL-derived image instead, override `BASE_IMAGE`.
-
-The output is `dist/DISPatch-<version>-rhel8-<arch>.tar.gz` plus a SHA-256
-checksum. The tarball contains the `dispatch` executable, the default and debug
-config files, Conan-deployed runtime libraries, Qt plugins, and a
-`run-dispatch` launcher that sets `LD_LIBRARY_PATH` and `QT_PLUGIN_PATH`.
+CLion can import the included `CMakePresets.json`. The `default` and `tests`
+presets use Qt6. Select `qt5-debug` for a Qt5 debug build profile, or `qt5` and
+`qt5-tests` for the generic Qt5 profiles. Select the `tests` preset to
+configure with `DISPATCH_WITH_TESTS=ON`; CLion will discover the CTest tests,
+and the `check` build preset/target builds and runs them with failure output
+enabled.
 
 ## DIS6 Command Mapping
 

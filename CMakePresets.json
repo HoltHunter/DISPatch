@@ -11,7 +11,8 @@
       "displayName": "Default",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "DISPATCH_WITH_TESTS": "OFF"
+        "DISPATCH_WITH_TESTS": "OFF",
+        "DISPATCH_QT_MAJOR": "6"
       }
     },
     {
@@ -19,7 +20,36 @@
       "displayName": "Tests",
       "binaryDir": "${sourceDir}/build-tests",
       "cacheVariables": {
-        "DISPATCH_WITH_TESTS": "ON"
+        "DISPATCH_WITH_TESTS": "ON",
+        "DISPATCH_QT_MAJOR": "6"
+      }
+    },
+    {
+      "name": "qt5",
+      "displayName": "Qt5",
+      "binaryDir": "${sourceDir}/build-qt5",
+      "cacheVariables": {
+        "DISPATCH_WITH_TESTS": "OFF",
+        "DISPATCH_QT_MAJOR": "5"
+      }
+    },
+    {
+      "name": "qt5-debug",
+      "displayName": "Qt5 Debug",
+      "binaryDir": "${sourceDir}/cmake-build-debug-qt5",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "DISPATCH_WITH_TESTS": "OFF",
+        "DISPATCH_QT_MAJOR": "5"
+      }
+    },
+    {
+      "name": "qt5-tests",
+      "displayName": "Qt5 Tests",
+      "binaryDir": "${sourceDir}/build-qt5-tests",
+      "cacheVariables": {
+        "DISPATCH_WITH_TESTS": "ON",
+        "DISPATCH_QT_MAJOR": "5"
       }
     }
   ],
@@ -38,12 +68,38 @@
       "targets": [
         "check"
       ]
+    },
+    {
+      "name": "qt5",
+      "configurePreset": "qt5"
+    },
+    {
+      "name": "qt5-debug",
+      "configurePreset": "qt5-debug"
+    },
+    {
+      "name": "qt5-tests",
+      "configurePreset": "qt5-tests"
+    },
+    {
+      "name": "qt5-check",
+      "configurePreset": "qt5-tests",
+      "targets": [
+        "check"
+      ]
     }
   ],
   "testPresets": [
     {
       "name": "tests",
       "configurePreset": "tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "qt5-tests",
+      "configurePreset": "qt5-tests",
       "output": {
         "outputOnFailure": true
       }

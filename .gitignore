@@ -1,6 +1,8 @@
 # Build output
 /build/
 /build-tests/
+/build-qt5/
+/build-qt5-tests/
 /cmake-build-*/
 
 # CMake generated files that may be created outside the ignored build dirs
