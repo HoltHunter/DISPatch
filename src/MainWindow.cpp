@@ -453,13 +453,10 @@ MainWindow::MainWindow(QWidget *parent)
     startSimulationTimeOffsetSpin_ =
         makeSmallSpinBox(stateGroup, 0, MaxTimeOffsetSeconds, appConfig_.startSimulationTimeOffsetSeconds);
     startSimulationTimeOffsetSpin_->setSuffix(QStringLiteral(" s"));
-    startUseLiteralZeroCheck_ = new QCheckBox(QStringLiteral("Use literal zero"), stateGroup);
-    startUseLiteralZeroCheck_->setChecked(appConfig_.startUseLiteralZero);
     stateLayout->addWidget(new QLabel(QStringLiteral("Start real-world offset"), stateGroup), 0, 0, 1, 3);
     stateLayout->addWidget(startRealWorldTimeOffsetSpin_, 0, 3, 1, 3);
     stateLayout->addWidget(new QLabel(QStringLiteral("Start simulation offset"), stateGroup), 1, 0, 1, 3);
     stateLayout->addWidget(startSimulationTimeOffsetSpin_, 1, 3, 1, 3);
-    stateLayout->addWidget(startUseLiteralZeroCheck_, 2, 0, 1, 6);
     addStateButton(stateLayout, QStringLiteral("Initialize"), SimulationCommand::Initialize, 3, 0, 3);
     addStateButton(stateLayout, QStringLiteral("Start"), SimulationCommand::Start, 3, 3, 3);
     addStateButton(stateLayout, QStringLiteral("Pause"), SimulationCommand::Pause, 4, 0, 2);
@@ -1078,7 +1075,6 @@ auto MainWindow::currentConfig(bool *configOk) const -> DisConfig
     config.initializeActionId = appConfig_.initializeActionId;
     config.startRealWorldTimeOffsetSeconds = committedSpinBoxValue(startRealWorldTimeOffsetSpin_);
     config.startSimulationTimeOffsetSeconds = committedSpinBoxValue(startSimulationTimeOffsetSpin_);
-    config.startUseLiteralZero = startUseLiteralZeroCheck_->isChecked();
     config.pauseFrozenBehavior = appConfig_.pauseFrozenBehavior;
     config.stopFrozenBehavior = appConfig_.stopFrozenBehavior;
     config.resetFrozenBehavior = appConfig_.resetFrozenBehavior;
@@ -1587,21 +1583,19 @@ void MainWindow::sendStateCommand(SimulationCommand command)
     rememberRequest(requestId, commandName(command));
     QString detail;
     if (command == SimulationCommand::Start) {
-        const QString realWorldTime =
-            config.startUseLiteralZero && config.startRealWorldTimeOffsetSeconds == 0
-            ? QStringLiteral("literal zero")
-            : QStringLiteral("+%1s").arg(config.startRealWorldTimeOffsetSeconds);
-        const QString simulationTime =
-            config.startUseLiteralZero && config.startSimulationTimeOffsetSeconds == 0
-            ? QStringLiteral("literal zero")
-            : QStringLiteral("+%1s").arg(config.startSimulationTimeOffsetSeconds);
-        detail = QStringLiteral(", real-world %1, simulation %2").arg(realWorldTime, simulationTime);
+        detail = QStringLiteral(
+                    ", real-world +%1s (absolute), simulation +%2s (relative)")
+                    .arg(config.startRealWorldTimeOffsetSeconds)
+                    .arg(config.startSimulationTimeOffsetSeconds);
     } else if (command == SimulationCommand::Pause
-               || command == SimulationCommand::Stop
-               || command == SimulationCommand::Reset) {
-        detail = QStringLiteral(", reason %1").arg(stopFreezeReasonLabel(stopFreezeReasonForCommand(command)));
+            || command == SimulationCommand::Stop
+            || command == SimulationCommand::Reset) {
+        detail = QStringLiteral(", reason %1")
+                    .arg(stopFreezeReasonLabel(
+                        stopFreezeReasonForCommand(command)));
     } else if (command == SimulationCommand::Initialize) {
-        detail = QStringLiteral(", action %1").arg(config.initializeActionId);
+        detail = QStringLiteral(", action %1")
+                    .arg(config.initializeActionId);
     }
     appendLog(QStringLiteral("Sent %1 request %2 to %3:%4 (%5 bytes%6)")
                   .arg(commandName(command))
