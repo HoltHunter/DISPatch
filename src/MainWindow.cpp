@@ -457,11 +457,11 @@ MainWindow::MainWindow(QWidget *parent)
     stateLayout->addWidget(startRealWorldTimeOffsetSpin_, 0, 3, 1, 3);
     stateLayout->addWidget(new QLabel(QStringLiteral("Start simulation offset"), stateGroup), 1, 0, 1, 3);
     stateLayout->addWidget(startSimulationTimeOffsetSpin_, 1, 3, 1, 3);
-    addStateButton(stateLayout, QStringLiteral("Initialize"), SimulationCommand::Initialize, 3, 0, 3);
-    addStateButton(stateLayout, QStringLiteral("Start"), SimulationCommand::Start, 3, 3, 3);
-    addStateButton(stateLayout, QStringLiteral("Pause"), SimulationCommand::Pause, 4, 0, 2);
-    addStateButton(stateLayout, QStringLiteral("Stop"), SimulationCommand::Stop, 4, 2, 2);
-    addStateButton(stateLayout, QStringLiteral("Reset"), SimulationCommand::Reset, 4, 4, 2);
+    addStateButton(stateLayout, QStringLiteral("Initialize"), SimulationCommand::Initialize, 2, 0, 3);
+    addStateButton(stateLayout, QStringLiteral("Start"), SimulationCommand::Start, 2, 3, 3);
+    addStateButton(stateLayout, QStringLiteral("Pause"), SimulationCommand::Pause, 3, 0, 2);
+    addStateButton(stateLayout, QStringLiteral("Stop"), SimulationCommand::Stop, 3, 2, 2);
+    addStateButton(stateLayout, QStringLiteral("Reset"), SimulationCommand::Reset, 3, 4, 2);
     for (int column = 0; column < 6; ++column) {
         stateLayout->setColumnStretch(column, 1);
     }
